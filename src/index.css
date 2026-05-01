@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE & Edge */
+  scrollbar-width: none;     /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  width: 0px;
+}
+
+.scrollbar-hide:hover::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollbar-hide:hover::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 10px;
+}
+
+
+/* Leave datepicker — already applied leave days */
+.react-datepicker__day--highlighted-leave {
+  background-color: #fef3c7 !important;
+  color: #92400e !important;
+  border-radius: 0.3rem;
+  position: relative;
+}
+.react-datepicker__day--highlighted-leave::after {
+  content: "";
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #f59e0b;
+  margin: 1px auto 0;
+}
+
+/* Leave datepicker — holiday days */
+.react-datepicker__day--highlighted-holiday {
+  background-color: #fce7f3 !important;
+  color: #9d174d !important;
+  border-radius: 0.3rem;
+  position: relative;
+}
+.react-datepicker__day--highlighted-holiday::after {
+  content: "";
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #ec4899;
+  margin: 1px auto 0;
+}
