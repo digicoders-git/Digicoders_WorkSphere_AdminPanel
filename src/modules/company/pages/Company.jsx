@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import CrudModal from "../../../Components/CrudModal";
-import { Plus, Pencil, Trash2, Building2, ToggleLeft, ToggleRight } from "lucide-react";
+import { Plus, Pencil, Trash2, Building2, ToggleLeft, ToggleRight, Upload } from "lucide-react";
 import { useStore } from "../../../context/StoreContext";
 import {
     fetchAllCompaniesForSuperAdmin, createCompanyWithAdmin,
-    updateCompany, deleteCompany, toggleCompanyStatus,
+    updateCompany, deleteCompany, toggleCompanyStatus, uploadCompanyIcon,
 } from "../services/companyService";
 
 const Company = () => {
@@ -16,6 +16,8 @@ const Company = () => {
     const [open, setOpen] = useState(false);
     const [selected, setSelected] = useState(null);
     const [loading, setLoading] = useState(false);
+    const iconInputRef = useRef(null);
+    const [iconUploadId, setIconUploadId] = useState(null);
 
     const loadCompanies = async () => {
         try {
@@ -71,6 +73,17 @@ const Company = () => {
         try { await toggleCompanyStatus(id); loadCompanies(); } catch (err) { console.error(err); }
     };
 
+    const handleIconUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file || !iconUploadId) return;
+        try {
+            await uploadCompanyIcon(iconUploadId, file);
+            loadCompanies();
+        } catch (err) { console.error(err); }
+        e.target.value = "";
+        setIconUploadId(null);
+    };
+
     return (
         <div className="p-6 bg-gray-50 min-h-screen">
             {/* Header */}
@@ -109,8 +122,10 @@ const Company = () => {
                             <tr key={c._id} className="hover:bg-gray-50 transition">
                                 <td className="px-4 py-3">
                                     <div className="flex items-center gap-3">
-                                        <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                                            <Building2 size={16} />
+                                        <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 overflow-hidden">
+                                            {c.icon?.url
+                                                ? <img src={c.icon.url} alt={c.name} className="w-full h-full object-cover" />
+                                                : <Building2 size={16} />}
                                         </div>
                                         <div>
                                             <p className="font-medium text-gray-800">{c.name}</p>
@@ -156,6 +171,12 @@ const Company = () => {
                                                     className="p-2 bg-yellow-50 hover:bg-yellow-100 text-yellow-600 rounded-lg transition">
                                                     <Pencil size={15} />
                                                 </button>
+                                                <button
+                                                    onClick={() => { setIconUploadId(c._id); iconInputRef.current?.click(); }}
+                                                    className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition"
+                                                    title="Upload Icon">
+                                                    <Upload size={15} />
+                                                </button>
                                             </>
                                         )}
                                         {hasPermission("DELETE_COMPANY") && (
@@ -172,6 +193,7 @@ const Company = () => {
                 </table>
             </div>
 
+            <input ref={iconInputRef} type="file" accept="image/*" className="hidden" onChange={handleIconUpload} />
             <CrudModal
                 isOpen={open} onClose={() => setOpen(false)}
                 title={selected ? "Edit Company" : "Add Company with Admin"}

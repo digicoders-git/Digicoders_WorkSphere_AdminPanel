@@ -21,6 +21,11 @@ export const markAllAsRead = async () => {
     return res.data;
 };
 
+export const markProjectNotificationsRead = async (projectId) => {
+    const res = await api.patch(ENDPOINTS.NOTIFICATION.MARK_PROJECT_READ(projectId));
+    return res.data;
+};
+
 export const deleteNotification = async (id) => {
     const res = await api.delete(ENDPOINTS.NOTIFICATION.DELETE(id));
     return res.data;

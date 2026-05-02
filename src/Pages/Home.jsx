@@ -11,6 +11,7 @@ import { fetchAllCompaniesList } from "../modules/company/services/companyServic
 import { getAllCompanyDepartments } from "../modules/department/services/departmentService";
 import { getTodayAttendance, getAttendanceSummary, getCompanyAttendance } from "../modules/attendance/services/attendanceService";
 import { checkIn, checkOut } from "../modules/attendance/services/attendanceService";
+import { getMyTaskHistory } from "../modules/projects/services/projectService";
 import { toast } from "react-toastify";
 
 const currentMonth = () => new Date().toISOString().slice(0, 7);
@@ -73,6 +74,7 @@ const Home = () => {
     const [today, setToday] = useState(null);
     const [summary, setSummary] = useState(null);
     const [teamToday, setTeamToday] = useState([]);
+    const [taskHistory, setTaskHistory] = useState([]);
     const [location, setLocation] = useState(null);
     const [locating, setLocating] = useState(false);
     const [locationError, setLocationError] = useState("");
@@ -110,6 +112,8 @@ const Home = () => {
         if (isAdmin) {
             getCompanyAttendance({ date: new Date().toISOString().split("T")[0] })
                 .then(d => setTeamToday(d.records || [])).catch(() => {});
+        } else {
+            getMyTaskHistory().then(r => setTaskHistory(r.data?.data || [])).catch(() => {});
         }
     }, [isAdmin]);
 
@@ -298,22 +302,44 @@ const Home = () => {
                         )}
                     </div>
                 ) : (
-                    /* Quick Links for non-admin */
+                    /* Task History for non-admin */
                     <div className="lg:col-span-1 bg-white border border-gray-200 rounded-2xl p-6">
-                        <h2 className="font-semibold text-gray-800 mb-4">Quick Access</h2>
-                        <div className="grid grid-cols-2 gap-3">
-                            {[
-                                { label: "Attendance", icon: Calendar, path: "/attendance", color: "bg-blue-50 text-blue-600" },
-                                { label: "Profile", icon: Users, path: "/profile", color: "bg-purple-50 text-purple-600" },
-                                { label: "Work Shifts", icon: Clock, path: "/work-shifts", color: "bg-green-50 text-green-600" },
-                                { label: "Settings", icon: ShieldCheck, path: "/settings", color: "bg-orange-50 text-orange-600" },
-                            ].map(c => (
-                                <Link key={c.path} to={c.path} className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-100 hover:border-blue-200 hover:shadow-sm transition">
-                                    <div className={`p-2.5 rounded-xl ${c.color}`}><c.icon size={18} /></div>
-                                    <span className="text-xs font-medium text-gray-600">{c.label}</span>
-                                </Link>
-                            ))}
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="font-semibold text-gray-800">My Task History</h2>
+                            <Link to="/projects" className="text-xs text-blue-500 hover:underline flex items-center gap-1">View projects <ArrowRight size={12} /></Link>
                         </div>
+                        {taskHistory.length === 0 ? (
+                            <p className="text-sm text-gray-400 text-center py-8">No task assignments yet.</p>
+                        ) : (
+                            <div className="space-y-3 max-h-64 overflow-y-auto no-scrollbar">
+                                {taskHistory.map(t => (
+                                    <div key={t._id} className="border border-gray-100 rounded-xl p-3">
+                                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                                            <p className="text-sm font-medium text-gray-800 truncate">{t.title}</p>
+                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 capitalize shrink-0">{t.status?.replace("_", " ")}</span>
+                                        </div>
+                                        {t.project?.name && (
+                                            <p className="text-[10px] text-blue-500 mb-1.5">{t.project.name}</p>
+                                        )}
+                                        <div className="space-y-1">
+                                            {t.history.slice(0, 3).map((h, i) => (
+                                                <div key={i} className="flex items-center gap-1.5 text-[10px]">
+                                                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                                        h.action === "assigned" ? "bg-green-500" : "bg-red-400"
+                                                    }`} />
+                                                    <span className={h.action === "assigned" ? "text-green-600 font-medium" : "text-red-500 font-medium"}>
+                                                        {h.action === "assigned" ? "Assigned" : "Removed"}
+                                                    </span>
+                                                    <span className="text-gray-400 ml-auto">
+                                                        {new Date(h.at).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

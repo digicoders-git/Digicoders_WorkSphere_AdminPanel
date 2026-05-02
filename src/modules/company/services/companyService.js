@@ -106,3 +106,17 @@ export const toggleCompanyStatus = async (companyId) => {
     throw error.response?.data || new Error("Failed to toggle company status");
   }
 };
+
+// 🔹 Upload company icon
+export const uploadCompanyIcon = async (companyId, file) => {
+  try {
+    const form = new FormData();
+    form.append("icon", file);
+    const response = await api.patch(ENDPOINTS.COMPANY.UPLOAD_ICON(companyId), form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return response.data;
+  } catch (error) {
+    throw error.response?.data || new Error("Failed to upload company icon");
+  }
+};

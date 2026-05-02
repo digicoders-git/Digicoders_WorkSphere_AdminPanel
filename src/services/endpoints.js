@@ -30,6 +30,7 @@ export const ENDPOINTS = {
     GET_COMPANY_BY_ID: (companyId) => `/api/company/${companyId}`,
     DELETE_COMPANY: (companyId) => `/api/company/${companyId}`,
     TOGGLE_COMPANY_STATUS: (companyId) => `/api/company/${companyId}/status`,
+    UPLOAD_ICON: (companyId) => `/api/company/${companyId}/icon`,
   },
 
   DEPARTMENT: {
@@ -96,6 +97,7 @@ export const ENDPOINTS = {
     UNREAD_COUNT: `/api/notifications/unread-count`,
     MARK_READ: (id) => `/api/notifications/${id}/read`,
     MARK_ALL_READ: `/api/notifications/read-all`,
+    MARK_PROJECT_READ: (projectId) => `/api/notifications/mark-project-read/${projectId}`,
     DELETE: (id) => `/api/notifications/${id}`,
     CLEAR_ALL: `/api/notifications/clear-all`,
   },
@@ -153,5 +155,26 @@ export const ENDPOINTS = {
     BULK_MARK_PAID:   `/api/payroll/run/bulk-mark-paid`,
     SUMMARY:          `/api/payroll/summary`,
     MY:               `/api/payroll/my`,
+  },
+
+  PROJECT: {
+    CREATE: `/api/projects`,
+    GET_ALL: `/api/projects`,
+    GET_BY_ID: (id) => `/api/projects/${id}`,
+    UPDATE: (id) => `/api/projects/${id}`,
+    DELETE: (id) => `/api/projects/${id}`,
+  },
+
+  TASK: {
+    CREATE: `/api/tasks`,
+    MY_HISTORY: `/api/tasks/my-history`,
+    BY_PROJECT: (projectId) => `/api/tasks/project/${projectId}`,
+    GET_BY_ID: (id) => `/api/tasks/${id}`,
+    UPDATE: (id) => `/api/tasks/${id}`,
+    DELETE: (id) => `/api/tasks/${id}`,
+    ADD_COMMENT: (id) => `/api/tasks/${id}/comments`,
+    DELETE_COMMENT: (id, commentId) => `/api/tasks/${id}/comments/${commentId}`,
+    ADD_ATTACHMENT: (id) => `/api/tasks/${id}/attachments`,
+    DELETE_ATTACHMENT: (id, attId) => `/api/tasks/${id}/attachments/${attId}`,
   },
 };

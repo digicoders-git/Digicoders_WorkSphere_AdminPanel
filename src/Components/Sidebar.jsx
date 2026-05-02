@@ -3,8 +3,9 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useStore } from "../context/StoreContext";
 import {
     LayoutDashboard, Users, Building2, FolderKanban, ShieldCheck,
-    Settings, UserCircle, LogOut, ChevronLeft, Menu, Calendar, IndianRupee, Clock, X, Bell, Briefcase, Palmtree, CalendarDays, UserCheck, FileText
+    Settings, UserCircle, LogOut, ChevronLeft, Menu, Calendar, IndianRupee, Clock, X, Bell, Briefcase, Palmtree, CalendarDays, UserCheck, FileText, Kanban
 } from "lucide-react";
+import { useNotifications } from "../context/NotificationContext";
 import { authlogout } from "../modules/auth/services/authService";
 
 const NAV = [
@@ -19,6 +20,12 @@ const NAV = [
             { name: "Departments", icon: FolderKanban, path: "/departments",    permissions: ["VIEW_DEPARTMENT", "VIEW_ALL_DEPARTMENTS"] },
             { name: "Roles",       icon: ShieldCheck,  path: "/settings/roles", permissions: ["VIEW_ROLE", "VIEW_ALL_ROLES"] },
             { name: "Employees",   icon: Users,        path: "/users",          permissions: ["VIEW_USER", "VIEW_ALL_USERS"] },
+        ],
+    },
+    {
+        group: "Projects",
+        items: [
+            { name: "Projects", icon: Kanban, path: "/projects", permissions: [] },
         ],
     },
     {
@@ -39,6 +46,7 @@ const NAV = [
 const Sidebar = ({ mobileOpen, setMobileOpen }) => {
     const { user, logout } = useStore();
     const navigate = useNavigate();
+    const { taskCommentCount } = useNotifications();
     const [collapsed, setCollapsed] = useState(false);
     const permissions = user?.role?.permissions || [];
 
@@ -74,8 +82,19 @@ const Sidebar = ({ mobileOpen, setMobileOpen }) => {
                 <div className={`flex items-center h-16 px-4 border-b border-slate-700/50 ${collapsed ? "justify-center" : "justify-between"}`}>
                     {!collapsed && (
                         <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-xs font-bold shrink-0">HR</div>
-                            <span className="font-bold text-lg tracking-tight">HRMS</span>
+                            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden">
+                                {user?.companyId?.icon?.url
+                                    ? <img src={user.companyId.icon.url} alt="logo" className="w-full h-full object-cover" />
+                                    : <span>HR</span>}
+                            </div>
+                            <span className="font-bold text-lg tracking-tight">{user?.companyId?.name || "HRMS"}</span>
+                        </div>
+                    )}
+                    {collapsed && (
+                        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden">
+                            {user?.companyId?.icon?.url
+                                ? <img src={user.companyId.icon.url} alt="logo" className="w-full h-full object-cover" />
+                                : <span>HR</span>}
                         </div>
                     )}
                     {/* Desktop collapse / Mobile close */}
@@ -103,11 +122,19 @@ const Sidebar = ({ mobileOpen, setMobileOpen }) => {
                                     {visible.map(item => (
                                         <NavLink key={item.path} to={item.path} end={item.path === "/"} onClick={close}
                                             className={({ isActive }) =>
-                                                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all
+                                                `relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all
                                                 ${isActive ? "bg-blue-600 text-white font-medium" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`
                                             }>
                                             <item.icon size={18} className="shrink-0" />
-                                            {!collapsed && <span className="truncate">{item.name}</span>}
+                                            {!collapsed && (
+                                                <span className="truncate flex-1">{item.name}</span>
+                                            )}
+                                            {!collapsed && item.path === "/projects" && taskCommentCount > 0 && (
+                                                <span className="w-2 h-2 rounded-full bg-blue-400 shrink-0 animate-pulse" />
+                                            )}
+                                            {collapsed && item.path === "/projects" && taskCommentCount > 0 && (
+                                                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-blue-400" />
+                                            )}
                                         </NavLink>
                                     ))}
                                 </div>

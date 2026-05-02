@@ -15,6 +15,10 @@ const GROUP_COLOR = {
     Attendance:       "bg-yellow-50 text-yellow-700 border-yellow-100",
     Leave:            "bg-rose-50 text-rose-700 border-rose-100",
     LeaveType:        "bg-pink-50 text-pink-700 border-pink-100",
+    Holiday:          "bg-teal-50 text-teal-700 border-teal-100",
+    Payroll:          "bg-emerald-50 text-emerald-700 border-emerald-100",
+    Project:          "bg-indigo-50 text-indigo-700 border-indigo-100",
+    Task:             "bg-violet-50 text-violet-700 border-violet-100",
 };
 
 const formatLabel = (perm) =>

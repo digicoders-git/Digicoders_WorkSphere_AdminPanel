@@ -5,13 +5,14 @@ import { useNotifications } from "../context/NotificationContext";
 import { getNotifications, markAsRead, markAllAsRead, deleteNotification } from "../modules/notifications/services/notificationService";
 
 const TYPE_ICON = {
-    attendance: "🕐",
-    user:       "👤",
-    role:       "🛡️",
-    department: "🏢",
-    company:    "🏗️",
-    shift:      "⏰",
-    system:     "🔔",
+    attendance:    "🕐",
+    user:          "👤",
+    role:          "🛡️",
+    department:    "🏢",
+    company:       "🏗️",
+    shift:         "⏰",
+    system:        "🔔",
+    task_comment:  "💬",
 };
 
 const timeAgo = (date) => {
@@ -58,7 +59,14 @@ const NotificationBell = () => {
             setNotifications(prev => prev.map(x => x._id === n._id ? { ...x, isRead: true } : x));
             refresh();
         }
-        if (n.link) { setOpen(false); navigate(n.link); }
+        if (n.link) {
+            setOpen(false);
+            // For task_comment notifications, append taskId so ProjectDetail auto-opens the task
+            const link = n.type === "task_comment" && n.metadata?.taskId
+                ? `${n.link}?taskId=${n.metadata.taskId}`
+                : n.link;
+            navigate(link);
+        }
     };
 
     const handleDelete = async (e, id) => {

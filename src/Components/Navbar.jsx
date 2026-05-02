@@ -47,9 +47,14 @@ const Navbar = ({ onMenuClick }) => {
                 >
                     <Menu size={20} />
                 </button>
-                <div>
-                    <h1 className="text-base font-semibold text-gray-800">{pageTitle}</h1>
-                    <p className="text-xs text-gray-400 hidden sm:block">{user?.companyId?.name || "HRMS Platform"}</p>
+                <div className="flex items-center gap-2">
+                    {user?.companyId?.icon?.url && (
+                        <img src={user.companyId.icon.url} alt="company" className="w-6 h-6 rounded object-cover hidden sm:block" />
+                    )}
+                    <div>
+                        <h1 className="text-base font-semibold text-gray-800">{pageTitle}</h1>
+                        <p className="text-xs text-gray-400 hidden sm:block">{user?.companyId?.name || "HRMS Platform"}</p>
+                    </div>
                 </div>
             </div>
 
