@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { X, User, Mail, Phone, Lock, Briefcase, Calendar, Building2, ShieldCheck, Eye, EyeOff, Clock, Users, Search, ChevronDown } from "lucide-react";
+import { X, User, Mail, Phone, Lock, Briefcase, Calendar, Building2, ShieldCheck, Eye, EyeOff, Clock, Users, Search, ChevronDown, MapPin } from "lucide-react";
 
 const Field = ({ label, icon: Icon, children }) => (
     <div>
@@ -188,6 +188,11 @@ const EmployeeDrawer = ({ isOpen, onClose, initialData, companies, roles, shifts
                             </Field>
                             <Field label="Phone" icon={Phone}>
                                 <input type="text" value={form.phone || ""} onChange={(e) => set("phone", e.target.value)} placeholder="+91 00000 00000" />
+                            </Field>
+                        </div>
+                        <div className="mt-4">
+                            <Field label="Address" icon={MapPin}>
+                                <input type="text" value={form.address || ""} onChange={(e) => set("address", e.target.value)} placeholder="123, Street, City, State - PIN" />
                             </Field>
                         </div>
                         {!isEdit && (

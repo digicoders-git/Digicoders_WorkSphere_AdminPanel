@@ -5,7 +5,7 @@ import { getProfile, updateUserProfile, changePassword } from "../modules/auth/s
 import { getCompanyWorkShifts } from "../modules/workshift/services/workShiftService";
 import {
     Camera, Pencil, X, Check, User, Mail, Phone, Calendar,
-    Briefcase, Building2, ShieldCheck, Clock, Eye, EyeOff, Lock
+    Briefcase, Building2, ShieldCheck, Clock, Eye, EyeOff, Lock, MapPin
 } from "lucide-react";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -43,7 +43,7 @@ const TABS = [
 ];
 
 const EMPTY = {
-    firstName: "", lastName: "", email: "", phone: "", gender: "",
+    firstName: "", lastName: "", email: "", phone: "", gender: "", address: "",
     dateOfBirth: "", employeeCode: "", joiningDate: "", workShift: "",
     workShiftName: "", employmentStatus: "", role: "", companyId: "",
     department: "", designation: "", reportingTo: "", profilePic: null,
@@ -73,6 +73,7 @@ const Profile = () => {
         email:                u.email || "",
         phone:                u.phone || "",
         gender:               u.gender || "",
+        address:              u.address || "",
         dateOfBirth:          u.dateOfBirth?.split("T")[0] || "",
         employeeCode:         u.employeeCode || "",
         joiningDate:          u.joiningDate?.split("T")[0] || "",
@@ -157,7 +158,7 @@ const Profile = () => {
         try {
             const fd = new FormData();
             // Text fields only — skip read-only, internal, and file fields
-            const textFields = ["firstName", "lastName", "phone", "gender", "dateOfBirth",
+            const textFields = ["firstName", "lastName", "phone", "gender", "address", "dateOfBirth",
                 "employeeCode", "joiningDate", "workShift", "employmentStatus", "password"];
             textFields.forEach(k => {
                 if (form[k] !== null && form[k] !== "") fd.append(k, form[k]);
@@ -310,6 +311,9 @@ const Profile = () => {
                                 <Field label="Phone" icon={Phone}>
                                     <input name="phone" value={form.phone} onChange={handleChange} placeholder="+91 00000 00000" />
                                 </Field>
+                                <Field label="Address" icon={MapPin}>
+                                    <input name="address" value={form.address} onChange={handleChange} placeholder="123, Street, City, State - PIN" />
+                                </Field>
                                 <Field label="Gender">
                                     <select name="gender" value={form.gender} onChange={handleChange}>
                                         <option value="">Select gender</option>
@@ -328,6 +332,7 @@ const Profile = () => {
                                 <InfoRow icon={User}     label="Last Name"     value={form.lastName} />
                                 <InfoRow icon={Mail}     label="Email"         value={form.email} />
                                 <InfoRow icon={Phone}    label="Phone"         value={form.phone} />
+                                <InfoRow icon={MapPin}   label="Address"       value={form.address} />
                                 <InfoRow icon={User}     label="Gender"        value={form.gender} />
                                 <InfoRow icon={Calendar} label="Date of Birth" value={form.dateOfBirth} />
                             </div>

@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
-import { IndianRupee, Play, CheckCheck, Banknote, Trash2, X, ChevronDown, ChevronUp, FileText } from "lucide-react";
+import { IndianRupee, Play, CheckCheck, Banknote, Trash2, X, ChevronDown, ChevronUp, FileText, Printer } from "lucide-react";
 import { toast } from "react-toastify";
 import { useStore } from "../../../context/StoreContext";
 import DefineSalary from "./DefineSalary";
+import PayslipPrint from "./PayslipPrint";
 import {
     getPayrollRuns, getPayrollSummary, generatePayroll,
     approvePayroll, markPayrollPaid, deletePayrollRun,
@@ -20,13 +21,16 @@ const STATUS_CLS = {
 const fmt = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
 // ── Payslip Detail Modal ──────────────────────────────────────────────────────
-const PayslipModal = ({ run, onClose }) => {
+const PayslipModal = ({ run, onClose, company }) => {
+    const [showPrint, setShowPrint] = useState(false);
     if (!run) return null;
     const earnings   = run.components?.filter(c => c.type === "earning")  || [];
     const deductions = run.components?.filter(c => c.type === "deduction") || [];
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+        <>
+        {showPrint && <PayslipPrint run={run} company={company} onClose={() => setShowPrint(false)} />}
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/50">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
                 <div className="flex items-center justify-between px-6 py-4 border-b">
                     <div>
@@ -38,7 +42,13 @@ const PayslipModal = ({ run, onClose }) => {
                             </p>
                         )}
                     </div>
-                    <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"><X size={16} /></button>
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => setShowPrint(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition">
+                            <Printer size={13} /> Print
+                        </button>
+                        <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"><X size={16} /></button>
+                    </div>
                 </div>
 
                 <div className="px-6 py-5 space-y-5">
@@ -112,6 +122,7 @@ const PayslipModal = ({ run, onClose }) => {
                 </div>
             </div>
         </div>
+        </>
     );
 };
 
@@ -139,7 +150,7 @@ const SummaryCards = ({ summary }) => {
 };
 
 // ── Admin View ────────────────────────────────────────────────────────────────
-const AdminPayroll = ({ can }) => {
+const AdminPayroll = ({ can, company }) => {
     const [month, setMonth]       = useState(currentMonth());
     const [runs, setRuns]         = useState([]);
     const [summary, setSummary]   = useState(null);
@@ -167,7 +178,14 @@ const AdminPayroll = ({ can }) => {
         try {
             setGenerating(true);
             const res = await generatePayroll({ month });
-            toast.success(res.message || "Payroll generated");
+            if (res.generated === 0) {
+                toast.warn(res.message || "No payroll generated. Check salary structures are defined for employees.");
+            } else {
+                toast.success(res.message || "Payroll generated");
+            }
+            if (res.errors?.length) {
+                res.errors.forEach(e => toast.error(`Error for employee: ${e.error}`));
+            }
             load();
         } catch (e) { toast.error(e?.response?.data?.message || "Failed to generate"); }
         finally { setGenerating(false); }
@@ -340,13 +358,14 @@ const AdminPayroll = ({ can }) => {
                 </table>
             </div>
 
-            <PayslipModal run={selected} onClose={() => setSelected(null)} />
+            <PayslipModal run={selected} company={company} onClose={() => setSelected(null)} />
         </div>
     );
 };
 
 // ── Employee View (My Payslips) ───────────────────────────────────────────────
-const MyPayslips = () => {
+const MyPayslips = ({ company }) => {
+    const { user } = useStore();
     const [runs, setRuns]     = useState([]);
     const [loading, setLoading] = useState(false);
     const [selected, setSelected] = useState(null);
@@ -358,6 +377,9 @@ const MyPayslips = () => {
             .catch(() => toast.error("Failed to load payslips"))
             .finally(() => setLoading(false));
     }, []);
+
+    // Inject logged-in user as userId so PayslipPrint has employee details
+    const withUser = (run) => run.userId ? run : { ...run, userId: user };
 
     return (
         <div>
@@ -395,7 +417,7 @@ const MyPayslips = () => {
                                     </span>
                                 </td>
                                 <td className="px-4 py-3 text-center">
-                                    <button onClick={() => setSelected(run)}
+                                    <button onClick={() => setSelected(withUser(run))}
                                         className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition">
                                         <FileText size={14} />
                                     </button>
@@ -405,7 +427,7 @@ const MyPayslips = () => {
                     </tbody>
                 </table>
             </div>
-            <PayslipModal run={selected} onClose={() => setSelected(null)} />
+            <PayslipModal run={selected} company={company} onClose={() => setSelected(null)} />
         </div>
     );
 };
@@ -420,6 +442,11 @@ const Payroll = () => {
 
     const showAdmin = can("MANAGE_PAYROLL") || can("APPROVE_PAYROLL");
     const [tab, setTab] = useState(showAdmin ? "admin" : "my");
+
+    // Company info for payslip header (stored in user context)
+    const company = user?.companyId
+        ? { name: user.companyId?.name || user.companyName || "", address: user.companyId?.address || "" }
+        : null;
 
     return (
         <div className="p-6 bg-gray-50 min-h-screen">
@@ -447,9 +474,9 @@ const Payroll = () => {
                 </div>
             )}
 
-            {tab === "admin"  && showAdmin && <AdminPayroll can={can} />}
+            {tab === "admin"  && showAdmin && <AdminPayroll can={can} company={company} />}
             {tab === "salary" && showAdmin && <DefineSalary />}
-            {tab === "my"     && <MyPayslips />}
+            {tab === "my"     && <MyPayslips company={company} />}
         </div>
     );
 };
