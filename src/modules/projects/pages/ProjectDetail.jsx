@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Plus, Paperclip, MessageSquare, Trash2, X, Upload, Link2 } from "lucide-react";
+import { ArrowLeft, Plus, Paperclip, MessageSquare, Trash2, X, Upload, Link2, FolderOpen } from "lucide-react";
 import { toast } from "react-toastify";
 import { useStore } from "../../../context/StoreContext";
 import { useNotifications } from "../../../context/NotificationContext";
@@ -10,6 +10,7 @@ import { markProjectNotificationsRead } from "../../notifications/services/notif
 import api from "../../../services/axios";
 import { ENDPOINTS } from "../../../services/endpoints";
 import TaskDetail from "./TaskDetail";
+import ProjectFiles from "./ProjectFiles";
 
 const inputCls = "w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
 
@@ -204,6 +205,7 @@ const ProjectDetail = () => {
 
     const [project, setProject] = useState(null);
     const [tasks, setTasks] = useState([]);
+    const [activeTab, setActiveTab] = useState("board"); // "board" | "files"
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [selectedTask, setSelectedTask] = useState(null);
@@ -292,7 +294,7 @@ const ProjectDetail = () => {
     return (
         <div className="p-6 bg-gray-50 min-h-screen">
             {/* Header */}
-            <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center gap-3 mb-4">
                 <button onClick={() => navigate("/projects")} className="p-2 rounded-lg hover:bg-gray-200 text-gray-500 transition">
                     <ArrowLeft size={18} />
                 </button>
@@ -309,7 +311,7 @@ const ProjectDetail = () => {
                             </div>
                         ))}
                     </div>
-                    {isAdmin && (
+                    {isAdmin && activeTab === "board" && (
                         <button onClick={() => setDrawerOpen(true)}
                             className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
                             <Plus size={15} /> Add Task
@@ -318,34 +320,58 @@ const ProjectDetail = () => {
                 </div>
             </div>
 
-            {/* Kanban Board */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {COLUMNS.map(col => (
-                    <div key={col.key} className="flex flex-col gap-3">
-                        <div className={`flex items-center justify-between px-3 py-2 rounded-lg ${col.color}`}>
-                            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">{col.label}</span>
-                            <span className="text-xs font-bold text-gray-500 bg-white rounded-full w-5 h-5 flex items-center justify-center">
-                                {tasksByStatus(col.key).length}
-                            </span>
-                        </div>
-                        <div className="space-y-2 min-h-[100px]">
-                            {tasksByStatus(col.key).map(task => (
-                                <TaskCard
-                                    key={task._id}
-                                    task={task}
-                                    onClick={() => {
-                                        setSelectedTask(task);
-                                        setUnreadTaskIds(prev => { const s = new Set(prev); s.delete(task._id); return s; });
-                                    }}
-                                    onDelete={handleDelete}
-                                    isAdmin={isAdmin}
-                                    hasUnread={unreadTaskIds.has(task._id)}
-                                />
-                            ))}
-                        </div>
-                    </div>
-                ))}
+            {/* Tabs */}
+            <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit mb-5">
+                <button onClick={() => setActiveTab("board")}
+                    className={`px-4 py-1.5 rounded-md text-xs font-medium transition ${activeTab === "board" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+                    Board
+                </button>
+                <button onClick={() => setActiveTab("files")}
+                    className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-medium transition ${activeTab === "files" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+                    <FolderOpen size={12} /> Files & Links
+                </button>
             </div>
+
+            {/* Files Tab */}
+            {activeTab === "files" && (
+                <ProjectFiles
+                    projectId={id}
+                    members={project.members || []}
+                    currentUserId={user?._id || user?.userId}
+                    isAdmin={isAdmin}
+                />
+            )}
+
+            {/* Kanban Board */}
+            {activeTab === "board" && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {COLUMNS.map(col => (
+                        <div key={col.key} className="flex flex-col gap-3">
+                            <div className={`flex items-center justify-between px-3 py-2 rounded-lg ${col.color}`}>
+                                <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">{col.label}</span>
+                                <span className="text-xs font-bold text-gray-500 bg-white rounded-full w-5 h-5 flex items-center justify-center">
+                                    {tasksByStatus(col.key).length}
+                                </span>
+                            </div>
+                            <div className="space-y-2 min-h-[100px]">
+                                {tasksByStatus(col.key).map(task => (
+                                    <TaskCard
+                                        key={task._id}
+                                        task={task}
+                                        onClick={() => {
+                                            setSelectedTask(task);
+                                            setUnreadTaskIds(prev => { const s = new Set(prev); s.delete(task._id); return s; });
+                                        }}
+                                        onDelete={handleDelete}
+                                        isAdmin={isAdmin}
+                                        hasUnread={unreadTaskIds.has(task._id)}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
 
             <TaskDrawer
                 isOpen={drawerOpen}

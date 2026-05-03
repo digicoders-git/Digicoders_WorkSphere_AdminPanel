@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { X, Paperclip, Send, Trash2, Upload, ExternalLink, FileText, Image, Film, Archive, UserPlus, UserMinus } from "lucide-react";
+import { X, Paperclip, Send, Trash2, Upload, ExternalLink, FileText, Image, Film, Archive, UserPlus, UserMinus, Download } from "lucide-react";
 import { toast } from "react-toastify";
 import { getTaskById, addComment, deleteComment, addAttachment, deleteAttachment, updateTask } from "../services/projectService";
+import api from "../../../services/axios";
+import { ENDPOINTS } from "../../../services/endpoints";
 
 const inputCls = "w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
 
@@ -21,16 +23,42 @@ const FileIcon = ({ type }) => {
     return <FileText size={14} className="text-gray-500" />;
 };
 
+const getExt = (name) => name?.split(".").pop()?.toLowerCase();
+const VIEWABLE = ["jpg", "jpeg", "png", "gif", "webp", "svg", "mp4", "mov"];
+
+const downloadFile = async (url, name) => {
+    try {
+        const res = await api.get(ENDPOINTS.PROJECT.DOWNLOAD, {
+            params: { url, name },
+            responseType: "blob",
+            timeout: 0,
+        });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(res.data);
+        a.download = name;
+        a.click();
+        URL.revokeObjectURL(a.href);
+    } catch { toast.error("Download failed"); }
+};
+
 const AttachmentItem = ({ att, onDelete, canDelete }) => (
     <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200 group">
         <FileIcon type={att.type} />
-        <a href={att.url} target="_blank" rel="noreferrer"
-            className="flex-1 text-xs text-blue-600 hover:underline truncate flex items-center gap-1">
-            {att.name || "Attachment"} <ExternalLink size={10} />
-        </a>
+        <span className="flex-1 text-xs text-gray-700 truncate">{att.name || "Attachment"}</span>
+        {VIEWABLE.includes(getExt(att.name)) ? (
+            <a href={att.url} target="_blank" rel="noreferrer"
+                className="flex items-center gap-1 text-xs text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded shrink-0 transition">
+                <ExternalLink size={11} /> View
+            </a>
+        ) : (
+            <button onClick={() => downloadFile(att.url, att.name || "file")}
+                className="flex items-center gap-1 text-xs text-white bg-blue-600 hover:bg-blue-700 px-2 py-0.5 rounded shrink-0 transition">
+                <Download size={11} /> Download
+            </button>
+        )}
         {canDelete && (
             <button onClick={() => onDelete(att._id)}
-                className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition">
+                className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition ml-1">
                 <Trash2 size={12} />
             </button>
         )}
@@ -323,15 +351,23 @@ const TaskDetail = ({ taskId, onClose, onUpdate, isAdmin, currentUserId, project
                                             {c.attachments?.length > 0 && (
                                                 <div className={`space-y-1 ${isMe ? "items-end" : "items-start"} flex flex-col`}>
                                                     {c.attachments.map(att => (
-                                                        <a key={att._id} href={att.url} target="_blank" rel="noreferrer"
-                                                            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border ${
-                                                                isMe
-                                                                    ? "bg-blue-50 text-blue-700 border-blue-200"
-                                                                    : "bg-white text-blue-600 border-gray-200"
-                                                            } hover:underline`}>
-                                                            <FileIcon type={att.type} />
-                                                            {att.name || "Attachment"} <ExternalLink size={10} />
-                                                        </a>
+                                                        VIEWABLE.includes(getExt(att.name)) ? (
+                                                            <a key={att._id} href={att.url} target="_blank" rel="noreferrer"
+                                                                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border ${
+                                                                    isMe ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-white text-blue-600 border-gray-200"
+                                                                } hover:underline`}>
+                                                                <FileIcon type={att.type} />
+                                                                {att.name || "Attachment"} <ExternalLink size={10} />
+                                                            </a>
+                                                        ) : (
+                                                            <button key={att._id} onClick={() => downloadFile(att.url, att.name || "file")}
+                                                                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border ${
+                                                                    isMe ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-white text-blue-600 border-gray-200"
+                                                                } hover:opacity-80 transition`}>
+                                                                <FileIcon type={att.type} />
+                                                                {att.name || "Attachment"} <Download size={10} />
+                                                            </button>
+                                                        )
                                                     ))}
                                                 </div>
                                             )}

@@ -157,12 +157,18 @@ export const ENDPOINTS = {
     MY:               `/api/payroll/my`,
   },
 
-  PROJECT: {
+    PROJECT: {
     CREATE: `/api/projects`,
     GET_ALL: `/api/projects`,
     GET_BY_ID: (id) => `/api/projects/${id}`,
     UPDATE: (id) => `/api/projects/${id}`,
     DELETE: (id) => `/api/projects/${id}`,
+    GET_BUNDLES: (id) => `/api/projects/${id}/bundles`,
+    CREATE_BUNDLE: (id) => `/api/projects/${id}/bundles`,
+    UPDATE_BUNDLE: (id, bid) => `/api/projects/${id}/bundles/${bid}`,
+    DELETE_BUNDLE: (id, bid) => `/api/projects/${id}/bundles/${bid}`,
+    UPDATE_BUNDLE_ACCESS: (id, bid) => `/api/projects/${id}/bundles/${bid}/access`,
+    DOWNLOAD: `/api/projects/download-proxy`,
   },
 
   TASK: {

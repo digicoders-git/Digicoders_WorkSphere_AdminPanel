@@ -12,7 +12,6 @@ export const StoreProvider = ({ children }) => {
         }
     });
 
-    // Always sync to localStorage when user changes
     const setUser = (newUser) => {
         setUserState(newUser);
         if (newUser) {

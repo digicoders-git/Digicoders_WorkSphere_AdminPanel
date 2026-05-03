@@ -1,10 +1,14 @@
 import React, { useState } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, Navigate } from "react-router-dom";
 import Sidebar from "../Components/Sidebar";
 import Navbar from "../Components/Navbar";
+import { useStore } from "../context/StoreContext";
 
 function WebLayout() {
+    const { user } = useStore();
     const [mobileOpen, setMobileOpen] = useState(false);
+
+    if (!user) return <Navigate to="/auth/login" replace />;
 
     return (
         <div className="flex h-screen bg-gray-50 overflow-hidden">
