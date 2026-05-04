@@ -171,13 +171,14 @@ export const ENDPOINTS = {
     DOWNLOAD: `/api/projects/download-proxy`,
   },
 
-  TASK: {
+    TASK: {
     CREATE: `/api/tasks`,
     MY_HISTORY: `/api/tasks/my-history`,
     BY_PROJECT: (projectId) => `/api/tasks/project/${projectId}`,
     GET_BY_ID: (id) => `/api/tasks/${id}`,
     UPDATE: (id) => `/api/tasks/${id}`,
     DELETE: (id) => `/api/tasks/${id}`,
+    COMMENT_ACCESS: (id) => `/api/tasks/${id}/comment-access`,
     ADD_COMMENT: (id) => `/api/tasks/${id}/comments`,
     DELETE_COMMENT: (id, commentId) => `/api/tasks/${id}/comments/${commentId}`,
     ADD_ATTACHMENT: (id) => `/api/tasks/${id}/attachments`,

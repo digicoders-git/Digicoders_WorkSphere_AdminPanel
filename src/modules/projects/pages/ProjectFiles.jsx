@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { Upload, Link2, FileText, Trash2, X, Plus, ExternalLink, Lock, Globe, KeyRound, Image, Film, Archive, ChevronDown, ChevronUp, Copy, Check, Download } from "lucide-react";
+import { Upload, Link2, FileText, Trash2, X, Plus, ExternalLink, Lock, Globe, KeyRound, Image, Film, Archive, ChevronDown, ChevronUp, Copy, Check, Download, Pencil } from "lucide-react";
 import { toast } from "react-toastify";
-import { getFileBundles, createFileBundle, deleteFileBundle, updateBundleAccess } from "../services/projectService";
+import { getFileBundles, createFileBundle, deleteFileBundle, updateBundleAccess, updateFileBundle } from "../services/projectService";
 import api from "../../../services/axios";
 import { ENDPOINTS } from "../../../services/endpoints";
 
@@ -41,7 +41,7 @@ const AddDrawer = ({ isOpen, onClose, onSubmit, loading, uploadProgress, members
     const [envContent, setEnvContent] = useState("");
     const [files, setFiles] = useState([]);
     const [isPublic, setIsPublic] = useState(true);
-    const [sharedWith, setSharedWith] = useState([]);
+    const [sharedWith, setSharedWith] = useState([]); // [{ userId, permission }]
     const submittingRef = useRef(false);
 
     useEffect(() => {
@@ -55,7 +55,15 @@ const AddDrawer = ({ isOpen, onClose, onSubmit, loading, uploadProgress, members
     const setLink = (i, k, v) => setLinks(ls => ls.map((l, idx) => idx === i ? { ...l, [k]: v } : l));
     const addLink = () => setLinks(ls => [...ls, { title: "", url: "" }]);
     const removeLink = (i) => setLinks(ls => ls.filter((_, idx) => idx !== i));
-    const toggleMember = (id) => setSharedWith(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
+    const toggleMember = (id) => setSharedWith(s =>
+        s.some(x => x.userId === id)
+            ? s.filter(x => x.userId !== id)
+            : [...s, { userId: id, permission: "read" }]
+    );
+    const setMemberPerm = (id, permission) =>
+        setSharedWith(s => s.map(x => x.userId === id ? { ...x, permission } : x));
+    const isMemberSelected = (id) => sharedWith.some(x => x.userId === id);
+    const getMemberPerm = (id) => sharedWith.find(x => x.userId === id)?.permission || "read";
 
     const handleSubmit = () => {
         if (submittingRef.current || loading) return;
@@ -70,7 +78,7 @@ const AddDrawer = ({ isOpen, onClose, onSubmit, loading, uploadProgress, members
         fd.append("name", name);
         fd.append("isPublic", isPublic);
         fd.append("links", JSON.stringify(links.filter(l => l.url.trim())));
-        if (!isPublic) sharedWith.forEach(id => fd.append("sharedWith", id));
+        if (!isPublic) fd.append("sharedWith", JSON.stringify(sharedWith.map(s => ({ user: s.userId, permission: s.permission }))));
         if (hasEnv) fd.append("envContent", envContent);
         files.forEach(f => fd.append("files", f));
         onSubmit(fd).finally(() => { submittingRef.current = false; });
@@ -171,13 +179,21 @@ const AddDrawer = ({ isOpen, onClose, onSubmit, loading, uploadProgress, members
                         {!isPublic && (
                             <div className="border border-gray-200 rounded-lg max-h-40 overflow-y-auto divide-y divide-gray-100">
                                 {members.map(m => (
-                                    <label key={m._id} className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer">
-                                        <input type="checkbox" checked={sharedWith.includes(m._id)} onChange={() => toggleMember(m._id)} className="rounded" />
+                                    <div key={m._id} className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50">
+                                        <input type="checkbox" checked={isMemberSelected(m._id)}
+                                            onChange={() => toggleMember(m._id)} className="rounded shrink-0" />
                                         <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0">
                                             {m.firstName?.[0]}{m.lastName?.[0]}
                                         </div>
-                                        <span className="text-sm text-gray-700">{m.firstName} {m.lastName}</span>
-                                    </label>
+                                        <span className="text-sm text-gray-700 flex-1">{m.firstName} {m.lastName}</span>
+                                        {isMemberSelected(m._id) && (
+                                            <select value={getMemberPerm(m._id)} onChange={e => setMemberPerm(m._id, e.target.value)}
+                                                className="text-[10px] border border-gray-200 rounded px-1.5 py-0.5 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-400">
+                                                <option value="read">Read</option>
+                                                <option value="read_write">Read + Write</option>
+                                            </select>
+                                        )}
+                                    </div>
                                 ))}
                             </div>
                         )}
@@ -224,8 +240,28 @@ const AddDrawer = ({ isOpen, onClose, onSubmit, loading, uploadProgress, members
 // ── Access Manager Modal ───────────────────────────────────────────────────────
 const AccessModal = ({ bundle, members, onClose, onSave, loading }) => {
     const [isPublic, setIsPublic] = useState(bundle.isPublic);
-    const [sharedWith, setSharedWith] = useState(bundle.sharedWith?.map(u => u._id || u) || []);
-    const toggle = (id) => setSharedWith(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
+    // sharedWith: [{ userId, permission }]
+    const [sharedWith, setSharedWith] = useState(
+        (bundle.sharedWith || []).map(s => ({
+            userId: (s.user?._id || s.user || s).toString(),
+            permission: s.permission || "read",
+        }))
+    );
+
+    const isSelected = (id) => sharedWith.some(s => s.userId === id);
+    const getPerm = (id) => sharedWith.find(s => s.userId === id)?.permission || "read";
+
+    const toggle = (id) => {
+        setSharedWith(prev =>
+            isSelected(id)
+                ? prev.filter(s => s.userId !== id)
+                : [...prev, { userId: id, permission: "read" }]
+        );
+    };
+
+    const setPerm = (id, permission) => {
+        setSharedWith(prev => prev.map(s => s.userId === id ? { ...s, permission } : s));
+    };
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
@@ -246,22 +282,30 @@ const AccessModal = ({ bundle, members, onClose, onSave, loading }) => {
                         </button>
                     </div>
                     {!isPublic && (
-                        <div className="border border-gray-200 rounded-lg max-h-48 overflow-y-auto divide-y divide-gray-100">
+                        <div className="border border-gray-200 rounded-lg max-h-64 overflow-y-auto divide-y divide-gray-100">
                             {members.map(m => (
-                                <label key={m._id} className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer">
-                                    <input type="checkbox" checked={sharedWith.includes(m._id)} onChange={() => toggle(m._id)} className="rounded" />
+                                <div key={m._id} className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50">
+                                    <input type="checkbox" checked={isSelected(m._id)}
+                                        onChange={() => toggle(m._id)} className="rounded shrink-0" />
                                     <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0">
                                         {m.firstName?.[0]}{m.lastName?.[0]}
                                     </div>
-                                    <span className="text-sm text-gray-700">{m.firstName} {m.lastName}</span>
-                                </label>
+                                    <span className="text-sm text-gray-700 flex-1">{m.firstName} {m.lastName}</span>
+                                    {isSelected(m._id) && (
+                                        <select value={getPerm(m._id)} onChange={e => setPerm(m._id, e.target.value)}
+                                            className="text-[10px] border border-gray-200 rounded px-1.5 py-0.5 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-400">
+                                            <option value="read">Read</option>
+                                            <option value="read_write">Read + Write</option>
+                                        </select>
+                                    )}
+                                </div>
                             ))}
                         </div>
                     )}
                 </div>
                 <div className="px-5 py-3 border-t flex justify-end gap-2">
                     <button onClick={onClose} className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-                    <button onClick={() => onSave({ isPublic, sharedWith })} disabled={loading}
+                    <button onClick={() => onSave({ isPublic, sharedWith: sharedWith.map(s => ({ user: s.userId, permission: s.permission })) })} disabled={loading}
                         className="px-4 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-60">
                         {loading ? "Saving..." : "Save Access"}
                     </button>
@@ -271,8 +315,37 @@ const AccessModal = ({ bundle, members, onClose, onSave, loading }) => {
     );
 };
 
+// ── ENV Edit Modal ────────────────────────────────────────────────────────────
+const EnvEditModal = ({ bundle, onClose, onSave, loading }) => {
+    const [envContent, setEnvContent] = useState(bundle.envContent || "");
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-md flex flex-col">
+                <div className="flex items-center justify-between px-5 py-4 border-b">
+                    <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                        <KeyRound size={14} className="text-yellow-500" /> Edit ENV — {bundle.name}
+                    </h3>
+                    <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"><X size={15} /></button>
+                </div>
+                <div className="px-5 py-4">
+                    <textarea value={envContent} onChange={e => setEnvContent(e.target.value)}
+                        rows={10} placeholder={"DB_URL=mongodb://...\nAPI_KEY=xxx"}
+                        className={`${inputCls} font-mono text-xs`} />
+                </div>
+                <div className="px-5 py-3 border-t flex justify-end gap-2">
+                    <button onClick={onClose} className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
+                    <button onClick={() => onSave(envContent)} disabled={loading}
+                        className="px-4 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-60">
+                        {loading ? "Saving..." : "Save ENV"}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // ── Bundle Card ────────────────────────────────────────────────────────────────
-const BundleCard = ({ bundle, canDelete, isAdmin, onDelete, onManageAccess }) => {
+const BundleCard = ({ bundle, canDelete, isAdmin, canEdit, onDelete, onManageAccess, onEditEnv }) => {
     const [expanded, setExpanded] = useState(false);
     const [copied, setCopied] = useState(false);
 
@@ -309,6 +382,11 @@ const BundleCard = ({ bundle, canDelete, isAdmin, onDelete, onManageAccess }) =>
                             {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
                         </button>
                     )}
+                    {canEdit && (
+                        <button onClick={() => onEditEnv(bundle)} className="p-1.5 hover:bg-yellow-50 rounded-lg text-yellow-500 transition opacity-0 group-hover:opacity-100" title="Edit ENV">
+                            <Pencil size={14} />
+                        </button>
+                    )}
                     {isAdmin && (
                         <button onClick={() => onManageAccess(bundle)} className="p-1.5 hover:bg-blue-50 rounded-lg text-blue-500 transition opacity-0 group-hover:opacity-100">
                             <Lock size={14} />
@@ -324,6 +402,37 @@ const BundleCard = ({ bundle, canDelete, isAdmin, onDelete, onManageAccess }) =>
 
             {expanded && (
                 <div className="border-t border-gray-100 px-4 py-3 space-y-3">
+
+                    {/* Shared With */}
+                    {!bundle.isPublic && bundle.sharedWith?.length > 0 && (
+                        <div>
+                            <p className="text-[10px] font-semibold text-gray-400 uppercase mb-1.5">Shared With</p>
+                            <div className="flex flex-wrap gap-1.5">
+                                {bundle.sharedWith.map((s, i) => {
+                                    const u = s.user || s;
+                                    const perm = s.permission || "read";
+                                    return (
+                                        <span key={i} className="flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full border font-medium bg-gray-50 text-gray-700 border-gray-200">
+                                            <div className="w-4 h-4 rounded-full bg-blue-600 text-white text-[8px] font-bold flex items-center justify-center shrink-0">
+                                                {u.firstName?.[0]}{u.lastName?.[0]}
+                                            </div>
+                                            {u.firstName} {u.lastName}
+                                            <span className={`px-1 py-0.5 rounded text-[9px] font-semibold ${
+                                                perm === "read_write" ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-500"
+                                            }`}>
+                                                {perm === "read_write" ? "R/W" : "Read"}
+                                            </span>
+                                        </span>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                    {bundle.isPublic && (
+                        <p className="text-[10px] text-gray-400 flex items-center gap-1">
+                            <Globe size={10} className="text-green-500" /> Visible to all project members
+                        </p>
+                    )}
                     {hasFiles && (
                         <div>
                             <p className="text-[10px] font-semibold text-gray-400 uppercase mb-1.5">Files</p>
@@ -387,6 +496,8 @@ const ProjectFiles = ({ projectId, members, currentUserId, isAdmin }) => {
     const [uploadProgress, setUploadProgress] = useState(0);
     const [accessBundle, setAccessBundle] = useState(null);
     const [accessLoading, setAccessLoading] = useState(false);
+    const [envEditBundle, setEnvEditBundle] = useState(null);
+    const [envSaving, setEnvSaving] = useState(false);
 
     const canManage = isAdmin || serverIsAdmin;
 
@@ -439,6 +550,19 @@ const ProjectFiles = ({ projectId, members, currentUserId, isAdmin }) => {
         finally { setAccessLoading(false); }
     };
 
+    const handleSaveEnv = async (envContent) => {
+        try {
+            setEnvSaving(true);
+            const fd = new FormData();
+            fd.append("envContent", envContent);
+            const res = await updateFileBundle(projectId, envEditBundle._id, fd);
+            setBundles(res.data.data || []);
+            setEnvEditBundle(null);
+            toast.success("ENV updated");
+        } catch { toast.error("Failed to update ENV"); }
+        finally { setEnvSaving(false); }
+    };
+
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -462,8 +586,10 @@ const ProjectFiles = ({ projectId, members, currentUserId, isAdmin }) => {
                             bundle={b}
                             canDelete={canManage || b.uploadedBy?._id === currentUserId}
                             isAdmin={canManage}
+                            canEdit={b.canEdit || canManage}
                             onDelete={handleDelete}
                             onManageAccess={setAccessBundle}
+                            onEditEnv={setEnvEditBundle}
                         />
                     ))}
                 </div>
@@ -485,6 +611,15 @@ const ProjectFiles = ({ projectId, members, currentUserId, isAdmin }) => {
                     onClose={() => setAccessBundle(null)}
                     onSave={handleSaveAccess}
                     loading={accessLoading}
+                />
+            )}
+
+            {envEditBundle && (
+                <EnvEditModal
+                    bundle={envEditBundle}
+                    onClose={() => setEnvEditBundle(null)}
+                    onSave={handleSaveEnv}
+                    loading={envSaving}
                 />
             )}
         </div>

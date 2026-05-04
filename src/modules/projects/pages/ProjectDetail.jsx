@@ -4,8 +4,7 @@ import { ArrowLeft, Plus, Paperclip, MessageSquare, Trash2, X, Upload, Link2, Fo
 import { toast } from "react-toastify";
 import { useStore } from "../../../context/StoreContext";
 import { useNotifications } from "../../../context/NotificationContext";
-import { getProjectById } from "../services/projectService";
-import { getTasksByProject, createTask, updateTask, deleteTask } from "../services/projectService";
+import { getProjectById, getTasksByProject, createTask, updateTask, deleteTask, getFileBundles } from "../services/projectService";
 import { markProjectNotificationsRead } from "../../notifications/services/notificationService";
 import api from "../../../services/axios";
 import { ENDPOINTS } from "../../../services/endpoints";
@@ -21,11 +20,18 @@ const PRIORITY_COLORS = {
     urgent: "bg-red-50 text-red-700",
 };
 
+const QA_COLORS = {
+    pending: "bg-gray-100 text-gray-500",
+    pass: "bg-green-50 text-green-700",
+    fail: "bg-red-50 text-red-600",
+};
+
 const COLUMNS = [
-    { key: "todo", label: "To Do", color: "bg-gray-100" },
-    { key: "in_progress", label: "In Progress", color: "bg-blue-100" },
-    { key: "review", label: "Review", color: "bg-yellow-100" },
-    { key: "done", label: "Done", color: "bg-green-100" },
+    { key: "todo",         label: "To Do",        color: "bg-gray-100" },
+    { key: "in_progress",  label: "In Progress",   color: "bg-blue-100" },
+    { key: "qa",           label: "QA",            color: "bg-purple-100" },
+    { key: "admin_review", label: "Admin Review",  color: "bg-orange-100" },
+    { key: "done",         label: "Done",          color: "bg-green-100" },
 ];
 
 const TaskDrawer = ({ isOpen, onClose, onSubmit, loading, members }) => {
@@ -86,7 +92,11 @@ const TaskDrawer = ({ isOpen, onClose, onSubmit, loading, members }) => {
                         <div>
                             <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
                             <select value={form.status} onChange={e => set("status", e.target.value)} className={inputCls}>
-                                {COLUMNS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+                                <option value="todo">To Do</option>
+                                <option value="in_progress">In Progress</option>
+                                <option value="qa">QA</option>
+                                <option value="admin_review">Admin Review</option>
+                                <option value="done">Done</option>
                             </select>
                         </div>
                     </div>
@@ -168,6 +178,11 @@ const TaskCard = ({ task, onClick, onDelete, isAdmin, hasUnread }) => (
             )}
         </div>
         {task.description && <p className="text-xs text-gray-400 mt-1 line-clamp-2">{task.description}</p>}
+        {task.status === "qa" && task.qaStatus !== "pending" && (
+            <span className={`inline-block text-[10px] px-2 py-0.5 rounded-full font-medium mt-1 ${QA_COLORS[task.qaStatus]}`}>
+                QA: {task.qaStatus.toUpperCase()}
+            </span>
+        )}
         <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-100">
             <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium capitalize ${PRIORITY_COLORS[task.priority]}`}>
                 {task.priority}
@@ -205,7 +220,8 @@ const ProjectDetail = () => {
 
     const [project, setProject] = useState(null);
     const [tasks, setTasks] = useState([]);
-    const [activeTab, setActiveTab] = useState("board"); // "board" | "files"
+    const [bundles, setBundles] = useState([]);
+    const [activeTab, setActiveTab] = useState("board");
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [selectedTask, setSelectedTask] = useState(null);
@@ -237,11 +253,18 @@ const ProjectDetail = () => {
         } catch { toast.error("Failed to load tasks"); }
     };
 
+    const loadBundles = async () => {
+        try {
+            const res = await getFileBundles(id);
+            setBundles(res.data.data || []);
+        } catch { /* silent */ }
+    };
+
     useEffect(() => {
         loadProject();
         loadTasks();
+        loadBundles();
         loadUnreadTasks();
-        // Mark all task_comment notifications for this project as read
         markProjectNotificationsRead(id).then(() => refreshNotifications()).catch(() => {});
     }, [id]);
 
@@ -342,9 +365,8 @@ const ProjectDetail = () => {
                 />
             )}
 
-            {/* Kanban Board */}
             {activeTab === "board" && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                     {COLUMNS.map(col => (
                         <div key={col.key} className="flex flex-col gap-3">
                             <div className={`flex items-center justify-between px-3 py-2 rounded-lg ${col.color}`}>
@@ -389,6 +411,7 @@ const ProjectDetail = () => {
                     isAdmin={isAdmin}
                     currentUserId={user?._id || user?.userId}
                     projectMembers={project?.members || []}
+                    projectBundles={bundles}
                 />
             )}
         </div>
