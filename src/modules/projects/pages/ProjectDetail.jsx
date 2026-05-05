@@ -159,7 +159,7 @@ const TaskDrawer = ({ isOpen, onClose, onSubmit, loading, members }) => {
     );
 };
 
-const TaskCard = ({ task, onClick, onDelete, isAdmin, hasUnread }) => (
+const TaskCard = ({ task, onClick, onDelete, canDelete, hasUnread }) => (
     <div onClick={onClick}
         className="relative bg-white border border-gray-200 rounded-lg p-3 shadow-sm hover:shadow-md transition cursor-pointer group">
         {hasUnread && (
@@ -170,7 +170,7 @@ const TaskCard = ({ task, onClick, onDelete, isAdmin, hasUnread }) => (
         )}
         <div className="flex items-start justify-between gap-2">
             <p className="text-sm font-medium text-gray-800 leading-snug">{task.title}</p>
-            {isAdmin && (
+            {canDelete && (
                 <button onClick={e => { e.stopPropagation(); onDelete(task._id); }}
                     className="p-1 text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition shrink-0">
                     <Trash2 size={13} />
@@ -217,6 +217,7 @@ const ProjectDetail = () => {
     const { refresh: refreshNotifications } = useNotifications();
     const isSuperAdmin = user?.role?.name === "super_admin";
     const isAdmin = isSuperAdmin || user?.role?.permissions?.some(p => ["CREATE_TASK", "UPDATE_TASK"].includes(p));
+    const canDeleteTask = isSuperAdmin || user?.role?.permissions?.some(p => p === "DELETE_TASK");
 
     const [project, setProject] = useState(null);
     const [tasks, setTasks] = useState([]);
@@ -385,7 +386,7 @@ const ProjectDetail = () => {
                                             setUnreadTaskIds(prev => { const s = new Set(prev); s.delete(task._id); return s; });
                                         }}
                                         onDelete={handleDelete}
-                                        isAdmin={isAdmin}
+                                        canDelete={canDeleteTask}
                                         hasUnread={unreadTaskIds.has(task._id)}
                                     />
                                 ))}

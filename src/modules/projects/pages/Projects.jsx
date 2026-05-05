@@ -126,6 +126,7 @@ const Projects = () => {
     const { taskCommentCount, refresh: refreshNotifications } = useNotifications();
     const isSuperAdmin = user?.role?.name === "super_admin";
     const isAdmin = isSuperAdmin || user?.role?.permissions?.some(p => ["CREATE_PROJECT", "UPDATE_PROJECT"].includes(p));
+    const canDeleteProject = isSuperAdmin || user?.role?.permissions?.some(p => p === "DELETE_PROJECT");
 
     const [projects, setProjects] = useState([]);
     const [users, setUsers] = useState([]);
@@ -237,16 +238,20 @@ const Projects = () => {
                                         </span>
                                     </div>
                                 </div>
-                                {isAdmin && (
+                                {(isAdmin || canDeleteProject) && (
                                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition" onClick={e => e.stopPropagation()}>
-                                        <button onClick={() => { setSelected(p); setDrawerOpen(true); }}
-                                            className="p-1.5 bg-yellow-50 hover:bg-yellow-100 text-yellow-600 rounded-lg">
-                                            <Pencil size={13} />
-                                        </button>
-                                        <button onClick={() => handleDelete(p._id)}
-                                            className="p-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-lg">
-                                            <Trash2 size={13} />
-                                        </button>
+                                        {isAdmin && (
+                                            <button onClick={() => { setSelected(p); setDrawerOpen(true); }}
+                                                className="p-1.5 bg-yellow-50 hover:bg-yellow-100 text-yellow-600 rounded-lg">
+                                                <Pencil size={13} />
+                                            </button>
+                                        )}
+                                        {canDeleteProject && (
+                                            <button onClick={() => handleDelete(p._id)}
+                                                className="p-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-lg">
+                                                <Trash2 size={13} />
+                                            </button>
+                                        )}
                                     </div>
                                 )}
                             </div>

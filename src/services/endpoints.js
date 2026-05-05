@@ -177,6 +177,7 @@ export const ENDPOINTS = {
     BY_PROJECT: (projectId) => `/api/tasks/project/${projectId}`,
     GET_BY_ID: (id) => `/api/tasks/${id}`,
     UPDATE: (id) => `/api/tasks/${id}`,
+    START_WORK: (id) => `/api/tasks/${id}/start`,
     DELETE: (id) => `/api/tasks/${id}`,
     COMMENT_ACCESS: (id) => `/api/tasks/${id}/comment-access`,
     ADD_COMMENT: (id) => `/api/tasks/${id}/comments`,

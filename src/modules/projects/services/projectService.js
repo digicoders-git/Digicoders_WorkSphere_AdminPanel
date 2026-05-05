@@ -27,6 +27,7 @@ export const getTasksByProject = (projectId) => api.get(ENDPOINTS.TASK.BY_PROJEC
 export const getTaskById = (id) => api.get(ENDPOINTS.TASK.GET_BY_ID(id));
 export const createTask = (formData) => api.post(ENDPOINTS.TASK.CREATE, formData, { headers: { "Content-Type": "multipart/form-data" } });
 export const updateTask = (id, data) => api.put(ENDPOINTS.TASK.UPDATE(id), data);
+export const startWork = (id) => api.patch(ENDPOINTS.TASK.START_WORK(id));
 export const deleteTask = (id) => api.delete(ENDPOINTS.TASK.DELETE(id));
 
 export const addComment = (id, formData) => api.post(ENDPOINTS.TASK.ADD_COMMENT(id), formData, { headers: { "Content-Type": "multipart/form-data" } });
