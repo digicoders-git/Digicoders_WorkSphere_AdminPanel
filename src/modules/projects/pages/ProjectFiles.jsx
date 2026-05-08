@@ -41,13 +41,14 @@ const AddDrawer = ({ isOpen, onClose, onSubmit, loading, uploadProgress, members
     const [envContent, setEnvContent] = useState("");
     const [files, setFiles] = useState([]);
     const [isPublic, setIsPublic] = useState(true);
+    const [publicPermission, setPublicPermission] = useState("read_write");
     const [sharedWith, setSharedWith] = useState([]); // [{ userId, permission }]
     const submittingRef = useRef(false);
 
     useEffect(() => {
         if (isOpen) {
             setName(""); setLinks([{ title: "", url: "" }]);
-            setEnvContent(""); setFiles([]); setIsPublic(true); setSharedWith([]);
+            setEnvContent(""); setFiles([]); setIsPublic(true); setPublicPermission("read_write"); setSharedWith([]);
             submittingRef.current = false;
         }
     }, [isOpen]);
@@ -58,12 +59,12 @@ const AddDrawer = ({ isOpen, onClose, onSubmit, loading, uploadProgress, members
     const toggleMember = (id) => setSharedWith(s =>
         s.some(x => x.userId === id)
             ? s.filter(x => x.userId !== id)
-            : [...s, { userId: id, permission: "read" }]
+            : [...s, { userId: id, permission: "read_write" }]
     );
     const setMemberPerm = (id, permission) =>
         setSharedWith(s => s.map(x => x.userId === id ? { ...x, permission } : x));
     const isMemberSelected = (id) => sharedWith.some(x => x.userId === id);
-    const getMemberPerm = (id) => sharedWith.find(x => x.userId === id)?.permission || "read";
+    const getMemberPerm = (id) => sharedWith.find(x => x.userId === id)?.permission || "read_write";
 
     const handleSubmit = () => {
         if (submittingRef.current || loading) return;
@@ -77,6 +78,7 @@ const AddDrawer = ({ isOpen, onClose, onSubmit, loading, uploadProgress, members
         const fd = new FormData();
         fd.append("name", name);
         fd.append("isPublic", isPublic);
+        fd.append("publicPermission", publicPermission);
         fd.append("links", JSON.stringify(links.filter(l => l.url.trim())));
         if (!isPublic) fd.append("sharedWith", JSON.stringify(sharedWith.map(s => ({ user: s.userId, permission: s.permission }))));
         if (hasEnv) fd.append("envContent", envContent);
@@ -176,6 +178,16 @@ const AddDrawer = ({ isOpen, onClose, onSubmit, loading, uploadProgress, members
                                 <Lock size={12} /> Restricted
                             </button>
                         </div>
+                        {isPublic && (
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-500">Permission:</span>
+                                <select value={publicPermission} onChange={e => setPublicPermission(e.target.value)}
+                                    className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-400">
+                                    <option value="read">Read</option>
+                                    <option value="read_write">Read + Write</option>
+                                </select>
+                            </div>
+                        )}
                         {!isPublic && (
                             <div className="border border-gray-200 rounded-lg max-h-40 overflow-y-auto divide-y divide-gray-100">
                                 {members.map(m => (
@@ -240,22 +252,23 @@ const AddDrawer = ({ isOpen, onClose, onSubmit, loading, uploadProgress, members
 // ── Access Manager Modal ───────────────────────────────────────────────────────
 const AccessModal = ({ bundle, members, onClose, onSave, loading }) => {
     const [isPublic, setIsPublic] = useState(bundle.isPublic);
+    const [publicPermission, setPublicPermission] = useState(bundle.publicPermission || "read_write");
     // sharedWith: [{ userId, permission }]
     const [sharedWith, setSharedWith] = useState(
         (bundle.sharedWith || []).map(s => ({
             userId: (s.user?._id || s.user || s).toString(),
-            permission: s.permission || "read",
+            permission: s.permission || "read_write",
         }))
     );
 
     const isSelected = (id) => sharedWith.some(s => s.userId === id);
-    const getPerm = (id) => sharedWith.find(s => s.userId === id)?.permission || "read";
+    const getPerm = (id) => sharedWith.find(s => s.userId === id)?.permission || "read_write";
 
     const toggle = (id) => {
         setSharedWith(prev =>
             isSelected(id)
                 ? prev.filter(s => s.userId !== id)
-                : [...prev, { userId: id, permission: "read" }]
+                : [...prev, { userId: id, permission: "read_write" }]
         );
     };
 
@@ -281,6 +294,16 @@ const AccessModal = ({ bundle, members, onClose, onSave, loading }) => {
                             <Lock size={12} /> Restricted
                         </button>
                     </div>
+                    {isPublic && (
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-500">Permission:</span>
+                            <select value={publicPermission} onChange={e => setPublicPermission(e.target.value)}
+                                className="text-xs border border-gray-200 rounded px-2 py-1 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-400">
+                                <option value="read">Read</option>
+                                <option value="read_write">Read + Write</option>
+                            </select>
+                        </div>
+                    )}
                     {!isPublic && (
                         <div className="border border-gray-200 rounded-lg max-h-64 overflow-y-auto divide-y divide-gray-100">
                             {members.map(m => (
@@ -305,7 +328,7 @@ const AccessModal = ({ bundle, members, onClose, onSave, loading }) => {
                 </div>
                 <div className="px-5 py-3 border-t flex justify-end gap-2">
                     <button onClick={onClose} className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-                    <button onClick={() => onSave({ isPublic, sharedWith: sharedWith.map(s => ({ user: s.userId, permission: s.permission })) })} disabled={loading}
+                    <button onClick={() => onSave({ isPublic, publicPermission, sharedWith: sharedWith.map(s => ({ user: s.userId, permission: s.permission })) })} disabled={loading}
                         className="px-4 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-60">
                         {loading ? "Saving..." : "Save Access"}
                     </button>
