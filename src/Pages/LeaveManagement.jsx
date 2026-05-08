@@ -77,7 +77,9 @@ const MyLeavesTab = ({ year }) => {
         try {
             await cancelLeave(id);
             toast.success("Leave cancelled");
-            setLeaves(prev => prev.map(l => l._id === id ? { ...l, status: "cancelled" } : l));
+            // Reload from server so balance counts stay accurate
+            const d = await getMyLeaves({ year });
+            setLeaves(d.leaves || []);
         } catch (e) { toast.error(e.response?.data?.message || "Failed to cancel"); }
     };
 
@@ -498,17 +500,7 @@ const TeamLeavesTab = ({ year, isAdmin }) => {
                                     <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 mb-1">
                                         <span className="flex items-center gap-1"><Calendar size={13} /> {leave.fromDate} → {leave.toDate}</span>
                                         <span className="flex items-center gap-1"><Clock size={13} /> {leave.days} working day{leave.days !== 1 ? "s" : ""}</span>
-                                        {(() => {
-                                            const from = new Date(leave.fromDate + "T00:00:00");
-                                            const to   = new Date(leave.toDate   + "T00:00:00");
-                                            let total = 0;
-                                            const cur = new Date(from);
-                                            while (cur <= to) { total++; cur.setDate(cur.getDate() + 1); }
-                                            const skipped = total - leave.days;
-                                            return skipped > 0 ? (
-                                                <span className="text-xs text-gray-400">({total} calendar days · {skipped} weekend/holiday excluded)</span>
-                                            ) : null;
-                                        })()}
+                                        <CalendarDayInfo leave={leave} />
                                     </div>
                                     <p className="text-sm text-gray-500 truncate">{leave.reason}</p>
                                     {leave.rejectionReason && (
@@ -561,6 +553,18 @@ const TeamLeavesTab = ({ year, isAdmin }) => {
 };
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
+const CalendarDayInfo = ({ leave }) => {
+    const from = new Date(leave.fromDate + "T00:00:00");
+    const to   = new Date(leave.toDate   + "T00:00:00");
+    let total = 0;
+    const cur = new Date(from);
+    while (cur <= to) { total++; cur.setDate(cur.getDate() + 1); }
+    const skipped = total - leave.days;
+    return skipped > 0
+        ? <span className="text-xs text-gray-400">({total} calendar days · {skipped} weekend/holiday excluded)</span>
+        : null;
+};
+
 const Loader = () => <div className="text-center py-16 text-gray-400 text-sm">Loading...</div>;
 const Empty = ({ icon: Icon, text }) => (
     <div className="bg-white border border-gray-200 rounded-xl p-14 text-center">

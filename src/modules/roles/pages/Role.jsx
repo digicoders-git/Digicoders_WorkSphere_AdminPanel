@@ -19,6 +19,7 @@ const GROUP_COLOR = {
     Payroll:          "bg-emerald-50 text-emerald-700 border-emerald-100",
     Project:          "bg-indigo-50 text-indigo-700 border-indigo-100",
     Task:             "bg-violet-50 text-violet-700 border-violet-100",
+    Lead:             "bg-lime-50 text-lime-700 border-lime-100",
 };
 
 const formatLabel = (perm) =>

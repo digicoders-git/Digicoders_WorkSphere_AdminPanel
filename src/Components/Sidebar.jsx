@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useStore } from "../context/StoreContext";
 import {
     LayoutDashboard, Users, Building2, FolderKanban, ShieldCheck,
-    Settings, UserCircle, LogOut, ChevronLeft, Menu, Calendar, IndianRupee, Clock, X, Bell, Briefcase, Palmtree, CalendarDays, UserCheck, FileText, Kanban
+    Settings, UserCircle, LogOut, ChevronLeft, Menu, Calendar, IndianRupee, Clock, X, Bell, Briefcase, Palmtree, CalendarDays, UserCheck, FileText, Kanban, TrendingUp
 } from "lucide-react";
 import { useNotifications } from "../context/NotificationContext";
 import { authlogout } from "../modules/auth/services/authService";
@@ -25,7 +25,8 @@ const NAV = [
     {
         group: "Projects",
         items: [
-            { name: "Projects", icon: Kanban, path: "/projects", permissions: [] },
+            { name: "Projects", icon: Kanban,     path: "/projects", permissions: [] },
+            { name: "Leads",    icon: TrendingUp,  path: "/leads",    permissions: [] },
         ],
     },
     {

@@ -185,4 +185,13 @@ export const ENDPOINTS = {
     ADD_ATTACHMENT: (id) => `/api/tasks/${id}/attachments`,
     DELETE_ATTACHMENT: (id, attId) => `/api/tasks/${id}/attachments/${attId}`,
   },
+
+  LEAD: {
+    GET_ALL:   `/api/leads`,
+    GET_BY_ID: (id) => `/api/leads/${id}`,
+    CREATE:    `/api/leads`,
+    UPDATE:    (id) => `/api/leads/${id}`,
+    DELETE:    (id) => `/api/leads/${id}`,
+    ADD_COMMUNICATION: (id) => `/api/leads/${id}/communications`,
+  },
 };

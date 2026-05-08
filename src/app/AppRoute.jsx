@@ -20,6 +20,7 @@ import LeaveType from "../modules/leave/pages/LeaveType";
 import Payroll from "../modules/payroll/pages/Payroll";
 import Projects from "../modules/projects/pages/Projects";
 import ProjectDetail from "../modules/projects/pages/ProjectDetail";
+import Leads from "../modules/leads/pages/Leads";
 
 
 
@@ -47,6 +48,7 @@ const AppRoute = createBrowserRouter([
             { path: "/payroll", element: <Payroll /> },
             { path: "/projects", element: <Projects /> },
             { path: "/projects/:id", element: <ProjectDetail /> },
+            { path: "/leads", element: <Leads /> },
             { path: "/notifications", element: <Notifications /> },
             { path: "/settings", element: <Settings /> },
             { path: "/settings/roles", element: <Role /> },

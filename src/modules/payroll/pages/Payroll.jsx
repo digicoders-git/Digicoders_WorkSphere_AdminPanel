@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { IndianRupee, Play, CheckCheck, Banknote, Trash2, X, ChevronDown, ChevronUp, FileText, Printer } from "lucide-react";
 import { toast } from "react-toastify";
 import { useStore } from "../../../context/StoreContext";
@@ -52,7 +52,6 @@ const PayslipModal = ({ run, onClose, company }) => {
                 </div>
 
                 <div className="px-6 py-5 space-y-5">
-                    {/* Attendance summary */}
                     <div className="grid grid-cols-3 gap-3 text-center">
                         {[
                             { label: "Working Days", value: run.totalWorkingDays },
@@ -69,7 +68,6 @@ const PayslipModal = ({ run, onClose, company }) => {
                         ))}
                     </div>
 
-                    {/* Earnings */}
                     <div>
                         <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Earnings</p>
                         <div className="space-y-1.5">
@@ -86,7 +84,6 @@ const PayslipModal = ({ run, onClose, company }) => {
                         </div>
                     </div>
 
-                    {/* Deductions */}
                     {deductions.length > 0 && (
                         <div>
                             <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">Deductions</p>
@@ -105,7 +102,6 @@ const PayslipModal = ({ run, onClose, company }) => {
                         </div>
                     )}
 
-                    {/* Net */}
                     <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-4 flex justify-between items-center">
                         <span className="font-semibold text-blue-800">Net Salary</span>
                         <span className="text-xl font-bold text-blue-700">{fmt(run.netSalary)}</span>
@@ -159,20 +155,25 @@ const AdminPayroll = ({ can, company }) => {
     const [selected, setSelected] = useState(null);
     const [expandedId, setExpandedId] = useState(null);
 
-    const load = async (m = month) => {
+    const load = useCallback(async (signal) => {
         try {
             setLoading(true);
             const [r, s] = await Promise.all([
-                getPayrollRuns({ month: m }),
-                getPayrollSummary({ month: m }),
+                getPayrollRuns({ month }, signal),
+                getPayrollSummary({ month }, signal),
             ]);
             setRuns(r.runs || []);
             setSummary(s.summary || null);
-        } catch { toast.error("Failed to load payroll"); }
-        finally { setLoading(false); }
-    };
+        } catch (e) {
+            if (e?.code !== "ERR_CANCELED" && e?.name !== "CanceledError") toast.error("Failed to load payroll");
+        } finally { setLoading(false); }
+    }, [month]);
 
-    useEffect(() => { load(); }, [month]);
+    useEffect(() => {
+        const controller = new AbortController();
+        load(controller.signal);
+        return () => controller.abort();
+    }, [load]);
 
     const handleGenerate = async () => {
         try {
@@ -219,8 +220,8 @@ const AdminPayroll = ({ can, company }) => {
         catch (e) { toast.error(e?.response?.data?.message || "Failed"); }
     };
 
-    const hasDrafts    = runs.some(r => r.status === "draft");
-    const hasApproved  = runs.some(r => r.status === "approved");
+    const hasDrafts   = runs.some(r => r.status === "draft");
+    const hasApproved = runs.some(r => r.status === "approved");
 
     return (
         <div>
@@ -366,19 +367,20 @@ const AdminPayroll = ({ can, company }) => {
 // ── Employee View (My Payslips) ───────────────────────────────────────────────
 const MyPayslips = ({ company }) => {
     const { user } = useStore();
-    const [runs, setRuns]     = useState([]);
-    const [loading, setLoading] = useState(false);
+    const [runs, setRuns]         = useState([]);
+    const [loading, setLoading]   = useState(false);
     const [selected, setSelected] = useState(null);
 
     useEffect(() => {
+        const controller = new AbortController();
         setLoading(true);
-        getMyPayslips()
+        getMyPayslips(controller.signal)
             .then(d => setRuns(d.runs || []))
-            .catch(() => toast.error("Failed to load payslips"))
+            .catch(e => { if (e?.code !== "ERR_CANCELED" && e?.name !== "CanceledError") toast.error("Failed to load payslips"); })
             .finally(() => setLoading(false));
+        return () => controller.abort();
     }, []);
 
-    // Inject logged-in user as userId so PayslipPrint has employee details
     const withUser = (run) => run.userId ? run : { ...run, userId: user };
 
     return (
@@ -443,7 +445,6 @@ const Payroll = () => {
     const showAdmin = can("MANAGE_PAYROLL") || can("APPROVE_PAYROLL");
     const [tab, setTab] = useState(showAdmin ? "admin" : "my");
 
-    // Company info for payslip header (stored in user context)
     const company = user?.companyId
         ? { name: user.companyId?.name || user.companyName || "", address: user.companyId?.address || "" }
         : null;
