@@ -1,354 +1,490 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Plus, Search, X, Pencil, Trash2, Phone, Mail, Building2, User, ChevronDown, MessageSquare, Clock, Send, Eye } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Eye, User, Send, MessageSquare, ChevronLeft, ChevronRight, Upload } from "lucide-react";
 import { toast } from "react-toastify";
 import { useStore } from "../../../context/StoreContext";
+import { fetchUsers } from "../../employee/services/UserService.jsx";
 import { getLeads, getLeadById, createLead, updateLead, deleteLead, addCommunication } from "../services/leadService";
-import { fetchUsers } from "../../employee/services/UserService";
+import LeadCommunication from "../components/LeadCommunication.jsx";
+import LeadHistory from "../components/LeadHistory.jsx";
+import LeadImport from "../components/LeadImport.jsx";
 
-const inputCls = "w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
+// ─── helpers ──────────────────────────────────────────────────────────────────
+const fmtUS = (raw = "") => {
+    const d = raw.replace(/\D/g, "").slice(0, 10);
+    if (d.length < 4) return d;
+    if (d.length < 7) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
+    return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+};
+const digits = (v = "") => v.replace(/\D/g, "");
+const extractPhone = (raw) => digits(raw).slice(-10);
 
-const STATUSES = ["New Lead", "Contacted", "Meeting Scheduled", "Proposal Sent", "Sent to Project Team", "Project Done", "On Hold", "Cancelled"];
+const PAGE_SIZE = 20;
+
+const STATUSES = ["New Lead", "Contacted", "Meeting Scheduled", "Proposal Sent",
+    "Sent to Project Team", "Project Done", "On Hold", "Cancelled"];
 
 const STATUS_COLORS = {
-    "New Lead":              "bg-blue-50 text-blue-700 border-blue-200",
-    "Contacted":             "bg-purple-50 text-purple-700 border-purple-200",
-    "Meeting Scheduled":     "bg-yellow-50 text-yellow-700 border-yellow-200",
-    "Proposal Sent":         "bg-orange-50 text-orange-700 border-orange-200",
-    "Sent to Project Team":  "bg-indigo-50 text-indigo-700 border-indigo-200",
-    "Project Done":          "bg-green-50 text-green-700 border-green-200",
-    "On Hold":               "bg-gray-50 text-gray-600 border-gray-200",
-    "Cancelled":             "bg-red-50 text-red-600 border-red-200",
+    "New Lead":             "bg-blue-50 text-blue-700 border-blue-200",
+    "Contacted":            "bg-yellow-50 text-yellow-700 border-yellow-200",
+    "Meeting Scheduled":    "bg-purple-50 text-purple-700 border-purple-200",
+    "Proposal Sent":        "bg-indigo-50 text-indigo-700 border-indigo-200",
+    "Sent to Project Team": "bg-cyan-50 text-cyan-700 border-cyan-200",
+    "Project Done":         "bg-green-50 text-green-700 border-green-200",
+    "On Hold":              "bg-orange-50 text-orange-700 border-orange-200",
+    "Cancelled":            "bg-red-50 text-red-700 border-red-200",
 };
 
-const fmt = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
-const fmtTime = (d) => d ? new Date(d).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
-const fullName = (u) => u ? `${u.firstName || ""} ${u.lastName || ""}`.trim() : "—";
+const inp = "w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
 
-// ── Lead Drawer (Create / Edit) ───────────────────────────────────────────────
-const EMPTY_FORM = { contactNumber: "", orgName: "", address: "", contactPerson: "", designation: "", cellNumber: "", email: "", status: "New Lead", assignedTo: "" };
+// ─── Inline communication form for new lead ───────────────────────────────────
+const NewLeadCommForm = ({ comm, onChange }) => (
+    <div>
+        <div className="flex items-center gap-2 mb-3">
+            <MessageSquare size={14} className="text-blue-500" />
+            <span className="text-sm font-semibold text-gray-800">Add Communication</span>
+            <span className="text-[10px] text-gray-400">(optional)</span>
+        </div>
+        <div className="space-y-2">
+            <input
+                value={comm.subject}
+                onChange={e => onChange({ ...comm, subject: e.target.value })}
+                placeholder="Subject (optional)"
+                className={inp}
+            />
+            <textarea
+                value={comm.description}
+                onChange={e => onChange({ ...comm, description: e.target.value })}
+                placeholder="Description…"
+                rows={4}
+                className={inp}
+            />
+        </div>
+    </div>
+);
 
-const LeadDrawer = ({ isOpen, onClose, initial, onSubmit, loading, users }) => {
-    const [form, setForm] = useState(EMPTY_FORM);
+// ─── Modal ────────────────────────────────────────────────────────────────────
+const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentUserId, onLeadUpdate }) => {
+    const emptyForm = useCallback(() => ({
+        contactNumber: "", orgName: "", address: "", contactPerson: "",
+        designation: "", cellNumber: "", email: "", rooms: "", extra: "", status: "New Lead",
+        assignedTo: currentUserId || "",
+    }), [currentUserId]);
+
+    const [form, setForm] = useState(emptyForm);
+    const [viewMode, setViewMode] = useState(false);
+    const [lookupLoading, setLookupLoading] = useState(false);
+    const [matchedLead, setMatchedLead] = useState(null);
+    const [fullLead, setFullLead] = useState(null);
+    const [newComm, setNewComm] = useState({ subject: "", description: "" });
+    const debounceRef = useRef(null);
 
     useEffect(() => {
+        if (!isOpen) return;
+        const handler = (e) => { if (e.key === "Escape") onClose(); };
+        window.addEventListener("keydown", handler);
+        return () => window.removeEventListener("keydown", handler);
+    }, [isOpen, onClose]);
+
+    useEffect(() => {
+        if (!isOpen) { setMatchedLead(null); setFullLead(null); return; }
         if (initial) {
-            setForm({
-                contactNumber: initial.contactNumber || "",
-                orgName:       initial.orgName || "",
-                address:       initial.address || "",
-                contactPerson: initial.contactPerson || "",
-                designation:   initial.designation || "",
-                cellNumber:    initial.cellNumber || "",
-                email:         initial.email || "",
-                status:        initial.status || "New Lead",
-                assignedTo:    initial.assignedTo?._id || initial.assignedTo || "",
-            });
+            // initial from list only has 6 projected fields — load full doc first,
+            // then populate form so no fields appear blank
+            setViewMode(true);
+            setFullLead(null);
+            getLeadById(initial._id)
+                .then(r => {
+                    const lead = r.lead || null;
+                    setFullLead(lead);
+                    if (lead) {
+                        setForm({
+                            contactNumber: fmtUS(lead.contactNumber || ""),
+                            orgName:       lead.orgName || "",
+                            address:       lead.address || "",
+                            contactPerson: lead.contactPerson || "",
+                            designation:   lead.designation || "",
+                            cellNumber:    fmtUS(lead.cellNumber || ""),
+                            email:         lead.email || "",
+                            rooms:         lead.rooms || "",
+                            extra:         lead.extra || "",
+                            status:        lead.status || "New Lead",
+                            assignedTo:    lead.assignedTo?._id || lead.assignedTo || "",
+                        });
+                    }
+                })
+                .catch(() => {});
         } else {
-            setForm(EMPTY_FORM);
+            setForm(emptyForm());
+            setNewComm({ subject: "", description: "" });
+            setViewMode(false);
+            setMatchedLead(null);
+            setFullLead(null);
         }
-    }, [isOpen, initial]);
+    }, [isOpen, initial, emptyForm]);
 
     const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-    const handleSubmit = () => {
-        if (!form.contactNumber.trim()) return toast.error("Contact number is required");
-        if (!form.orgName.trim()) return toast.error("Organisation name is required");
-        onSubmit(form);
+    const handleContactNumber = (raw) => {
+        const d = extractPhone(raw);
+        set("contactNumber", fmtUS(d));
+        if (d.length === 10 && !initial) {
+            clearTimeout(debounceRef.current);
+            debounceRef.current = setTimeout(() => autoPopulate(d), 400);
+        }
     };
+
+    const autoPopulate = async (d) => {
+        try {
+            setLookupLoading(true);
+            const res = await getLeads({ search: d, limit: 1 });
+            const leads = res?.leads || [];
+            const match = leads.find(l => digits(l.contactNumber || "") === d);
+            if (match) {
+                setMatchedLead(match);
+                setForm({
+                    contactNumber: fmtUS(match.contactNumber || ""),
+                    orgName:       match.orgName || "",
+                    address:       match.address || "",
+                    contactPerson: match.contactPerson || "",
+                    designation:   match.designation || "",
+                    cellNumber:    fmtUS(match.cellNumber || ""),
+                    email:         match.email || "",
+                    rooms:         match.rooms || "",
+                    extra:         match.extra || "",
+                    status:        match.status || "New Lead",
+                    assignedTo:    match.assignedTo?._id || match.assignedTo || "",
+                });
+                getLeadById(match._id).then(r => setFullLead(r.lead || null)).catch(() => {});
+                toast.info("Existing lead found — will update on save");
+            } else {
+                setMatchedLead(null);
+                setFullLead(null);
+            }
+        } catch { /* silent */ } finally { setLookupLoading(false); }
+    };
+
+    const handleSubmit = () => {
+        if (!digits(form.contactNumber)) return toast.error("Contact number is required");
+        if (!form.orgName.trim()) return toast.error("Organisation name is required");
+        // send empty string as empty string — never send undefined for existing fields
+        // backend $set with empty string keeps the field, undefined would unset it
+        const payload = {
+            contactNumber: digits(form.contactNumber),
+            orgName:       form.orgName.trim(),
+            address:       form.address,
+            contactPerson: form.contactPerson,
+            designation:   form.designation,
+            cellNumber:    digits(form.cellNumber) || "",
+            email:         form.email,
+            rooms:         form.rooms,
+            extra:         form.extra,
+            status:        form.status,
+            assignedTo:    form.assignedTo || null,
+        };
+        onSubmit(payload, matchedLead?._id || null, newComm);
+    };
+
+    const handleCommAdded = useCallback((comm) => {
+        setFullLead(prev => prev
+            ? { ...prev, communications: [...(prev.communications || []), comm] }
+            : prev
+        );
+        onLeadUpdate?.();
+    }, [onLeadUpdate]);
 
     if (!isOpen) return null;
 
-    return (
-        <div className="fixed inset-0 z-50 flex justify-end">
-            <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-            <div className="relative w-full max-w-md bg-white h-full flex flex-col shadow-2xl">
-                <div className="flex items-center justify-between px-6 py-4 border-b">
-                    <h2 className="text-base font-semibold text-gray-900">{initial ? "Edit Lead" : "New Lead"}</h2>
-                    <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"><X size={16} /></button>
-                </div>
-                <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-                    {[
-                        { label: "Contact Number", key: "contactNumber", required: true, placeholder: "10-digit number" },
-                        { label: "Organisation Name", key: "orgName", required: true, placeholder: "Company / org name" },
-                        { label: "Address", key: "address", placeholder: "Full address" },
-                        { label: "Contact Person", key: "contactPerson", placeholder: "Name of contact" },
-                        { label: "Designation", key: "designation", placeholder: "Their designation" },
-                        { label: "Cell Number", key: "cellNumber", placeholder: "Alternate number" },
-                        { label: "Email", key: "email", placeholder: "email@example.com" },
-                    ].map(({ label, key, required, placeholder }) => (
-                        <div key={key}>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">
-                                {label} {required && <span className="text-red-500">*</span>}
-                            </label>
-                            <input value={form[key]} onChange={e => set(key, e.target.value)}
-                                placeholder={placeholder} className={inputCls} />
-                        </div>
-                    ))}
-                    <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-                        <select value={form.status} onChange={e => set("status", e.target.value)} className={inputCls}>
-                            {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Assigned To</label>
-                        <select value={form.assignedTo} onChange={e => set("assignedTo", e.target.value)} className={inputCls}>
-                            <option value="">— Unassigned —</option>
-                            {users.map(u => (
-                                <option key={u._id} value={u._id}>{u.firstName} {u.lastName}</option>
-                            ))}
-                        </select>
-                    </div>
-                </div>
-                <div className="px-6 py-4 border-t flex justify-end gap-3">
-                    <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">Cancel</button>
-                    <button onClick={handleSubmit} disabled={loading}
-                        className="px-5 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-60">
-                        {loading ? "Saving..." : initial ? "Update" : "Create Lead"}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// ── Lead Detail Modal ─────────────────────────────────────────────────────────
-const LeadDetailModal = ({ leadId, onClose, onEdit }) => {
-    const [lead, setLead] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [tab, setTab] = useState("info");
-    const [commForm, setCommForm] = useState({ subject: "", description: "" });
-    const [commLoading, setCommLoading] = useState(false);
-
-    const load = useCallback(async () => {
-        if (!leadId) return;
-        try {
-            setLoading(true);
-            const res = await getLeadById(leadId);
-            setLead(res.lead);
-        } catch { toast.error("Failed to load lead details"); }
-        finally { setLoading(false); }
-    }, [leadId]);
-
-    useEffect(() => { load(); }, [load]);
-
-    const handleAddComm = async () => {
-        if (!commForm.subject.trim() || !commForm.description.trim())
-            return toast.error("Subject and description are required");
-        try {
-            setCommLoading(true);
-            await addCommunication(leadId, commForm);
-            toast.success("Communication added");
-            setCommForm({ subject: "", description: "" });
-            load();
-        } catch (err) {
-            toast.error(err?.response?.data?.message || "Failed to add communication");
-        } finally { setCommLoading(false); }
-    };
-
-    if (!leadId) return null;
+    const isEdit = !!initial;
+    const isExisting = isEdit || !!matchedLead;
+    const activeLead = fullLead || initial || matchedLead;
+    const communications = fullLead?.communications || [];
+    const history = fullLead?.history || [];
+    const activeLeadId = initial?._id || matchedLead?._id;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="relative w-[calc(100vw-32px)] h-[calc(100vh-32px)] max-w-6xl bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+
                 {/* Header */}
-                <div className="flex items-start justify-between px-6 py-4 border-b">
-                    <div>
-                        <h2 className="text-base font-semibold text-gray-900">{lead?.orgName || "Lead Details"}</h2>
-                        {lead && (
-                            <span className={`inline-block text-[10px] px-2 py-0.5 rounded-full font-medium border mt-1 ${STATUS_COLORS[lead.status]}`}>
-                                {lead.status}
+                <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
+                    <div className="flex items-center gap-3">
+                        <h2 className="text-base font-semibold text-gray-900">
+                            {viewMode ? (activeLead?.orgName || "Lead Details") : isEdit ? "Edit Lead" : "New Lead"}
+                        </h2>
+                        {isExisting && activeLead?.status && (
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${STATUS_COLORS[activeLead.status] || ""}`}>
+                                {activeLead.status}
+                            </span>
+                        )}
+                        {matchedLead && !isEdit && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium border bg-amber-50 text-amber-700 border-amber-200">
+                                Existing — will update
                             </span>
                         )}
                     </div>
                     <div className="flex items-center gap-2">
-                        {lead && (
-                            <button onClick={() => onEdit(lead)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-yellow-50 hover:bg-yellow-100 text-yellow-700 border border-yellow-200 rounded-lg">
+                        {isEdit && viewMode && (
+                            <button onClick={() => setViewMode(false)}
+                                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg font-medium">
                                 <Pencil size={12} /> Edit
                             </button>
                         )}
-                        <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"><X size={16} /></button>
+                        {isEdit && !viewMode && (
+                            <button onClick={() => setViewMode(true)}
+                                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg font-medium">
+                                <Eye size={12} /> View
+                            </button>
+                        )}
+                        <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500" title="Close (Esc)">
+                            <X size={16} />
+                        </button>
                     </div>
                 </div>
 
-                {/* Tabs */}
-                <div className="flex border-b px-6">
-                    {["info", "communications", "history"].map(t => (
-                        <button key={t} onClick={() => setTab(t)}
-                            className={`px-4 py-3 text-sm font-medium capitalize border-b-2 transition -mb-px ${tab === t ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
-                            {t}
-                            {t === "communications" && lead?.communications?.length > 0 && (
-                                <span className="ml-1.5 text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">{lead.communications.length}</span>
-                            )}
-                            {t === "history" && lead?.history?.length > 0 && (
-                                <span className="ml-1.5 text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{lead.history.length}</span>
-                            )}
-                        </button>
-                    ))}
-                </div>
+                {/* Body */}
+                <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
 
-                <div className="flex-1 overflow-y-auto px-6 py-5">
-                    {loading ? (
-                        <div className="flex items-center justify-center py-16 text-gray-400 text-sm">Loading...</div>
-                    ) : !lead ? (
-                        <div className="text-center py-16 text-gray-400 text-sm">Lead not found</div>
-                    ) : tab === "info" ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            {[
-                                { icon: Phone,     label: "Contact Number", value: lead.contactNumber },
-                                { icon: Building2, label: "Organisation",   value: lead.orgName },
-                                { icon: User,      label: "Contact Person", value: lead.contactPerson },
-                                { icon: null,      label: "Designation",    value: lead.designation },
-                                { icon: Phone,     label: "Cell Number",    value: lead.cellNumber },
-                                { icon: Mail,      label: "Email",          value: lead.email },
-                                { icon: null,      label: "Address",        value: lead.address },
-                                { icon: User,      label: "Assigned To",    value: fullName(lead.assignedTo) },
-                                { icon: null,      label: "Created By",     value: fullName(lead.createdBy) },
-                                { icon: null,      label: "Created At",     value: fmt(lead.createdAt) },
-                            ].map(({ icon: Icon, label, value }) => (
-                                <div key={label} className="bg-gray-50 rounded-lg px-4 py-3">
-                                    <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wide mb-0.5">{label}</p>
-                                    <div className="flex items-center gap-1.5">
-                                        {Icon && <Icon size={13} className="text-gray-400 shrink-0" />}
-                                        <p className="text-sm text-gray-800 font-medium">{value || "—"}</p>
+                    {/* LEFT */}
+                    <div className="flex flex-col w-full lg:w-1/2 lg:border-r overflow-y-auto">
+                        <div className="flex-1 px-6 py-5">
+                            {viewMode ? (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
+                                    {[
+                                        { label: "Contact Number",    value: fmtUS(activeLead?.contactNumber || "") },
+                                        { label: "Organisation Name", value: activeLead?.orgName },
+                                        { label: "Address",           value: activeLead?.address },
+                                        { label: "Contact Person",    value: activeLead?.contactPerson },
+                                        { label: "Designation",       value: activeLead?.designation },
+                                        { label: "Cell Number",       value: activeLead?.cellNumber ? fmtUS(activeLead.cellNumber) : null },
+                                        { label: "Email",             value: activeLead?.email },
+                                        { label: "Rooms",             value: activeLead?.rooms },
+                                        { label: "Extra",             value: activeLead?.extra },
+                                        { label: "Status",            value: activeLead?.status },
+                                        {
+                                            label: "Assigned To",
+                                            value: activeLead?.assignedTo
+                                                ? `${activeLead.assignedTo.firstName} ${activeLead.assignedTo.lastName}`
+                                                : null,
+                                        },
+                                    ].map(({ label, value }) => (
+                                        <div key={label}>
+                                            <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">{label}</p>
+                                            <p className="text-sm text-gray-800">{value || <span className="text-gray-300">—</span>}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">
+                                            Contact Number <span className="text-red-500">*</span>
+                                            {lookupLoading && <span className="text-blue-500 ml-1 font-normal">looking up…</span>}
+                                        </label>
+                                        <input value={form.contactNumber} onChange={e => handleContactNumber(e.target.value)}
+                                            placeholder="10-digit number" className={inp} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">
+                                            Organisation Name <span className="text-red-500">*</span>
+                                        </label>
+                                        <input value={form.orgName} onChange={e => set("orgName", e.target.value)}
+                                            placeholder="Company / org name" className={inp} />
+                                    </div>
+                                    <div className="sm:col-span-2">
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">Address</label>
+                                        <input value={form.address} onChange={e => set("address", e.target.value)}
+                                            placeholder="Full address" className={inp} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">Contact Person</label>
+                                        <input value={form.contactPerson} onChange={e => set("contactPerson", e.target.value)}
+                                            placeholder="Name of contact" className={inp} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">Designation</label>
+                                        <input value={form.designation} onChange={e => set("designation", e.target.value)}
+                                            placeholder="Their designation" className={inp} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">Cell Number</label>
+                                        <input value={form.cellNumber}
+                                            onChange={e => set("cellNumber", fmtUS(extractPhone(e.target.value)))}
+                                            placeholder="Alternate number" className={inp} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">Email</label>
+                                        <input type="email" value={form.email} onChange={e => set("email", e.target.value)}
+                                            placeholder="email@example.com" className={inp} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">Rooms</label>
+                                        <input value={form.rooms} onChange={e => set("rooms", e.target.value)}
+                                            placeholder="e.g. 3BHK, Studio" className={inp} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">Extra</label>
+                                        <input value={form.extra} onChange={e => set("extra", e.target.value)}
+                                            placeholder="Additional info" className={inp} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
+                                        <select value={form.status} onChange={e => set("status", e.target.value)} className={inp}>
+                                            {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">Assigned To</label>
+                                        <select value={form.assignedTo} onChange={e => set("assignedTo", e.target.value)} className={inp}>
+                                            <option value="">— Unassigned —</option>
+                                            {users.map(u => (
+                                                <option key={u._id} value={u._id}>{u.firstName} {u.lastName}</option>
+                                            ))}
+                                        </select>
                                     </div>
                                 </div>
-                            ))}
+                            )}
                         </div>
-                    ) : tab === "communications" ? (
-                        <div className="space-y-4">
-                            {/* Add communication */}
-                            <div className="border border-gray-200 rounded-xl p-4 space-y-3 bg-gray-50">
-                                <p className="text-xs font-semibold text-gray-600">Add Communication</p>
-                                <input value={commForm.subject} onChange={e => setCommForm(f => ({ ...f, subject: e.target.value }))}
-                                    placeholder="Subject" className={inputCls} />
-                                <textarea value={commForm.description} onChange={e => setCommForm(f => ({ ...f, description: e.target.value }))}
-                                    placeholder="Description / notes..." rows={3} className={inputCls} />
-                                <div className="flex justify-end">
-                                    <button onClick={handleAddComm} disabled={commLoading}
-                                        className="flex items-center gap-1.5 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-60">
-                                        <Send size={13} /> {commLoading ? "Adding..." : "Add"}
-                                    </button>
-                                </div>
+
+                        {!viewMode && (
+                            <div className="px-6 py-4 border-t flex justify-end gap-3 shrink-0">
+                                <button onClick={onClose}
+                                    className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">
+                                    Cancel
+                                </button>
+                                <button onClick={handleSubmit} disabled={saving}
+                                    className="flex items-center gap-1.5 px-5 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-60">
+                                    {saving ? "Saving…" : isExisting ? "Update Lead" : "Create Lead"}
+                                    {!isExisting && newComm.description && <Send size={13} />}
+                                </button>
                             </div>
-                            {/* List */}
-                            {lead.communications.length === 0 ? (
-                                <div className="text-center py-8 text-gray-400 text-sm">No communications yet</div>
-                            ) : (
-                                [...lead.communications].reverse().map(c => (
-                                    <div key={c._id} className="border border-gray-200 rounded-xl p-4">
-                                        <div className="flex items-start justify-between gap-2 mb-1">
-                                            <p className="text-sm font-semibold text-gray-800">{c.subject}</p>
-                                            <span className="text-[10px] text-gray-400 shrink-0">{fmtTime(c.addedAt)}</span>
-                                        </div>
-                                        <p className="text-sm text-gray-600 whitespace-pre-wrap">{c.description}</p>
-                                        {c.addedBy && (
-                                            <p className="text-[10px] text-gray-400 mt-2">By {fullName(c.addedBy)}</p>
-                                        )}
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    ) : (
-                        // History tab
-                        <div className="space-y-3">
-                            {lead.history.length === 0 ? (
-                                <div className="text-center py-8 text-gray-400 text-sm">No history yet</div>
-                            ) : (
-                                [...lead.history].reverse().map((h, i) => (
-                                    <div key={i} className="flex gap-3">
-                                        <div className="flex flex-col items-center">
-                                            <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
-                                                <Clock size={13} />
-                                            </div>
-                                            {i < lead.history.length - 1 && <div className="w-px flex-1 bg-gray-200 mt-1" />}
-                                        </div>
-                                        <div className="pb-4 flex-1">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <span className="text-xs font-medium text-gray-700">{fullName(h.changedBy)}</span>
-                                                <span className="text-[10px] text-gray-400">{fmtTime(h.changedAt)}</span>
-                                            </div>
-                                            <div className="space-y-1">
-                                                {Object.entries(h.changes || {}).map(([field, { from, to }]) => (
-                                                    <div key={field} className="text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-1.5">
-                                                        <span className="font-medium capitalize">{field.replace(/([A-Z])/g, " $1")}</span>
-                                                        {from != null && <span className="text-red-500 line-through ml-2">{String(from)}</span>}
-                                                        <span className="text-green-600 ml-2">→ {String(to)}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    )}
+                        )}
+                    </div>
+
+                    {/* RIGHT */}
+                    <div className="flex flex-col w-full lg:w-1/2 overflow-y-auto border-t lg:border-t-0">
+                        {isExisting ? (
+                            <>
+                                <div className="px-6 py-5 border-b">
+                                    <LeadCommunication
+                                        leadId={activeLeadId}
+                                        communications={communications}
+                                        onAdded={handleCommAdded}
+                                    />
+                                </div>
+                                <div className="px-6 py-5">
+                                    <LeadHistory history={history} />
+                                </div>
+                            </>
+                        ) : (
+                            <div className="px-6 py-5">
+                                <NewLeadCommForm comm={newComm} onChange={setNewComm} />
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>
     );
 };
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
+// ─── Pagination bar ───────────────────────────────────────────────────────────
+const Pagination = ({ page, total, limit, onChange }) => {
+    const totalPages = Math.ceil(total / limit);
+    if (totalPages <= 1) return null;
+    const from = (page - 1) * limit + 1;
+    const to   = Math.min(page * limit, total);
+    return (
+        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 bg-white rounded-b-xl">
+            <span className="text-xs text-gray-500">{from}–{to} of {total.toLocaleString()} leads</span>
+            <div className="flex items-center gap-1">
+                <button onClick={() => onChange(page - 1)} disabled={page === 1}
+                    className="p-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-30 text-gray-600">
+                    <ChevronLeft size={15} />
+                </button>
+                <span className="text-xs text-gray-600 px-2">{page} / {totalPages}</span>
+                <button onClick={() => onChange(page + 1)} disabled={page === totalPages}
+                    className="p-1.5 rounded-lg hover:bg-gray-100 disabled:opacity-30 text-gray-600">
+                    <ChevronRight size={15} />
+                </button>
+            </div>
+        </div>
+    );
+};
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 const Leads = () => {
     const { user } = useStore();
     const isSuperAdmin = user?.role?.name === "super_admin";
-    const canManage = isSuperAdmin || user?.role?.permissions?.some(p => ["CREATE_LEAD", "UPDATE_LEAD"].includes(p));
+    const canWrite = isSuperAdmin || user?.role?.permissions?.some(p => ["CREATE_LEAD", "UPDATE_LEAD"].includes(p));
     const canDelete = isSuperAdmin || user?.role?.permissions?.some(p => p === "DELETE_LEAD");
 
-    const [leads, setLeads] = useState([]);
-    const [total, setTotal] = useState(0);
-    const [users, setUsers] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [drawerOpen, setDrawerOpen] = useState(false);
-    const [saving, setSaving] = useState(false);
+    const [leads, setLeads]       = useState([]);
+    const [total, setTotal]       = useState(0);
+    const [page, setPage]         = useState(1);
+    const [search, setSearch]     = useState("");
+    const [searchInput, setSearchInput] = useState("");  // raw input, debounced into search
+    const [users, setUsers]       = useState([]);
+    const [saving, setSaving]     = useState(false);
+    const [loading, setLoading]   = useState(false);
+    const [modalOpen, setModalOpen] = useState(false);
+    const [importOpen, setImportOpen] = useState(false);
     const [selected, setSelected] = useState(null);
-    const [detailId, setDetailId] = useState(null);
+    const searchDebounce          = useRef(null);
 
-    const [search, setSearch] = useState("");
-    const [statusFilter, setStatusFilter] = useState("");
-    const [page, setPage] = useState(1);
-    const LIMIT = 20;
-
-    const searchTimer = useRef(null);
-
-    const load = useCallback(async (params = {}) => {
+    // Server-side load — only fetches current page
+    const load = useCallback(async (pg, q) => {
         try {
             setLoading(true);
-            const res = await getLeads({ search, status: statusFilter, page, limit: LIMIT, ...params });
-            setLeads(res.leads || []);
-            setTotal(res.total || 0);
+            const res = await getLeads({ page: pg, limit: PAGE_SIZE, ...(q ? { search: q } : {}) });
+            setLeads(res?.leads || []);
+            setTotal(res?.total || 0);
         } catch { toast.error("Failed to load leads"); }
         finally { setLoading(false); }
-    }, [search, statusFilter, page]);
+    }, []); // stable — no deps, pg and q passed as args
 
-    useEffect(() => { load(); }, [statusFilter, page]);
-
-    useEffect(() => {
-        clearTimeout(searchTimer.current);
-        searchTimer.current = setTimeout(() => { setPage(1); load({ search, page: 1 }); }, 400);
-        return () => clearTimeout(searchTimer.current);
-    }, [search]);
+    useEffect(() => { load(page, search); }, [page, search]); // eslint-disable-line
 
     useEffect(() => {
-        if (canManage) fetchUsers().then(r => setUsers(r.users || [])).catch(() => {});
+        fetchUsers().then(r => setUsers(r.users || [])).catch(() => {});
     }, []);
 
-    const handleSubmit = async (form) => {
+    // Debounce search input — reset to page 1 on new query
+    const handleSearchInput = (val) => {
+        setSearchInput(val);
+        clearTimeout(searchDebounce.current);
+        searchDebounce.current = setTimeout(() => {
+            setPage(1);
+            setSearch(val);
+        }, 400);
+    };
+
+    const handlePageChange = (pg) => { setPage(pg); };
+
+    const openNew  = () => { setSelected(null); setModalOpen(true); };
+    const openView = (lead) => { setSelected(lead); setModalOpen(true); };
+    const close    = () => { setModalOpen(false); setSelected(null); };
+
+    const handleSubmit = async (form, matchedId, newComm) => {
         try {
             setSaving(true);
-            if (selected) {
-                await updateLead(selected._id, form);
+            const existingId = selected?._id || matchedId;
+            if (existingId) {
+                await updateLead(existingId, form);
                 toast.success("Lead updated");
             } else {
-                await createLead(form);
+                const res = await createLead(form);
+                const createdId = res.lead?._id;
+                if (createdId && newComm?.description?.trim()) {
+                    await addCommunication(createdId, {
+                        subject:     newComm.subject?.trim() || "Note",
+                        description: newComm.description.trim(),
+                    });
+                }
                 toast.success("Lead created");
             }
-            setDrawerOpen(false);
-            setSelected(null);
-            load();
+            close();
+            load(page, search);
         } catch (err) {
             toast.error(err?.response?.data?.message || "Failed to save lead");
         } finally { setSaving(false); }
@@ -359,97 +495,96 @@ const Leads = () => {
         try {
             await deleteLead(id);
             toast.success("Lead deleted");
-            load();
+            // if last item on page > 1, go back
+            const newPage = leads.length === 1 && page > 1 ? page - 1 : page;
+            setPage(newPage);
+            load(newPage, search);
         } catch { toast.error("Failed to delete lead"); }
     };
 
-    const openEdit = (lead) => {
-        setDetailId(null);
-        setSelected(lead);
-        setDrawerOpen(true);
-    };
-
-    const totalPages = Math.ceil(total / LIMIT);
-
     return (
         <div className="p-6 bg-gray-50 min-h-screen">
-            {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900">Leads</h1>
-                    <p className="text-sm text-gray-500 mt-0.5">{total} lead{total !== 1 ? "s" : ""} found</p>
+                    <p className="text-sm text-gray-500 mt-0.5">
+                        {total > 0 ? `${total.toLocaleString()} total leads` : "Track and manage sales leads"}
+                    </p>
                 </div>
-                {canManage && (
-                    <button onClick={() => { setSelected(null); setDrawerOpen(true); }}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
-                        <Plus size={15} /> New Lead
-                    </button>
-                )}
-            </div>
-
-            {/* Filters */}
-            <div className="flex flex-col sm:flex-row gap-3 mb-5">
-                <div className="relative flex-1 max-w-sm">
-                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input value={search} onChange={e => setSearch(e.target.value)}
-                        placeholder="Search by contact number..."
-                        className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div className="relative">
-                    <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
-                        className="appearance-none pl-3 pr-8 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
-                        <option value="">All Statuses</option>
-                        {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                    <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <div className="flex items-center gap-3">
+                    <input
+                        value={searchInput}
+                        onChange={e => handleSearchInput(e.target.value)}
+                        placeholder="Search leads…"
+                        className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-52"
+                    />
+                    {canWrite && (
+                        <button onClick={() => setImportOpen(true)}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">
+                            <Upload size={15} /> Import CSV
+                        </button>
+                    )}
+                    {canWrite && (
+                        <button onClick={openNew}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
+                            <Plus size={15} /> New Lead
+                        </button>
+                    )}
                 </div>
             </div>
 
-            {/* Table */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
+            {loading ? (
+                <div className="flex items-center justify-center py-24">
+                    <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+            ) : leads.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-24 text-center">
+                    <User size={48} className="text-gray-300 mb-3" />
+                    <p className="text-gray-500 font-medium">{search ? "No leads match your search" : "No leads yet"}</p>
+                    {!search && <p className="text-gray-400 text-sm mt-1">Add your first lead to get started</p>}
+                </div>
+            ) : (
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
                     <table className="w-full text-sm">
-                        <thead>
-                            <tr className="bg-gray-50 border-b border-gray-200">
-                                {["Contact No.", "Organisation", "Contact Person", "Status", "Assigned To", "Created", "Actions"].map(h => (
+                        <thead className="bg-gray-50 border-b border-gray-200">
+                            <tr>
+                                {["Contact Number", "Organisation", "Contact Person", "Cell Number", "Status", "Assigned To", ""].map(h => (
                                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                            {loading ? (
-                                <tr><td colSpan={7} className="text-center py-16 text-gray-400">Loading...</td></tr>
-                            ) : leads.length === 0 ? (
-                                <tr><td colSpan={7} className="text-center py-16 text-gray-400">No leads found</td></tr>
-                            ) : leads.map(lead => (
-                                <tr key={lead._id} className="hover:bg-gray-50 transition">
-                                    <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">{lead.contactNumber}</td>
-                                    <td className="px-4 py-3 text-gray-700 max-w-[160px] truncate">{lead.orgName}</td>
-                                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{lead.contactPerson || "—"}</td>
+                            {leads.map(lead => (
+                                <tr key={lead._id} className="hover:bg-gray-50 transition group">
+                                    <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">{fmtUS(lead.contactNumber || "")}</td>
+                                    <td className="px-4 py-3 text-gray-700">{lead.orgName}</td>
+                                    <td className="px-4 py-3 text-gray-600">{lead.contactPerson || "—"}</td>
+                                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{lead.cellNumber ? fmtUS(lead.cellNumber) : "—"}</td>
                                     <td className="px-4 py-3">
-                                        <span className={`inline-block text-[10px] px-2 py-0.5 rounded-full font-medium border whitespace-nowrap ${STATUS_COLORS[lead.status]}`}>
+                                        <span className={`inline-block text-[10px] px-2 py-0.5 rounded-full font-medium border whitespace-nowrap ${STATUS_COLORS[lead.status] || ""}`}>
                                             {lead.status}
                                         </span>
                                     </td>
-                                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
-                                        {lead.assignedTo ? fullName(lead.assignedTo) : <span className="text-gray-400">Unassigned</span>}
+                                    <td className="px-4 py-3 text-gray-600">
+                                        {lead.assignedTo
+                                            ? `${lead.assignedTo.firstName} ${lead.assignedTo.lastName}`
+                                            : <span className="text-gray-300">—</span>}
                                     </td>
-                                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{fmt(lead.createdAt)}</td>
                                     <td className="px-4 py-3">
-                                        <div className="flex items-center gap-1.5">
-                                            <button onClick={() => setDetailId(lead._id)}
-                                                className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg" title="View details">
+                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition justify-end">
+                                            <button onClick={() => openView(lead)}
+                                                className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg">
                                                 <Eye size={13} />
                                             </button>
-                                            {canManage && (
-                                                <button onClick={() => openEdit(lead)}
-                                                    className="p-1.5 bg-yellow-50 hover:bg-yellow-100 text-yellow-600 rounded-lg" title="Edit">
+                                            {canWrite && (
+                                                <button onClick={() => { setSelected(lead); setModalOpen(true); }}
+                                                    className="p-1.5 bg-yellow-50 hover:bg-yellow-100 text-yellow-600 rounded-lg">
                                                     <Pencil size={13} />
                                                 </button>
                                             )}
                                             {canDelete && (
                                                 <button onClick={() => handleDelete(lead._id)}
-                                                    className="p-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-lg" title="Delete">
+                                                    className="p-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-lg">
                                                     <Trash2 size={13} />
                                                 </button>
                                             )}
@@ -459,38 +594,26 @@ const Leads = () => {
                             ))}
                         </tbody>
                     </table>
+                    <Pagination page={page} total={total} limit={PAGE_SIZE} onChange={handlePageChange} />
                 </div>
+            )}
 
-                {/* Pagination */}
-                {totalPages > 1 && (
-                    <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
-                        <p className="text-xs text-gray-500">Page {page} of {totalPages}</p>
-                        <div className="flex gap-2">
-                            <button disabled={page === 1} onClick={() => setPage(p => p - 1)}
-                                className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40">Prev</button>
-                            <button disabled={page === totalPages} onClick={() => setPage(p => p + 1)}
-                                className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40">Next</button>
-                        </div>
-                    </div>
-                )}
-            </div>
-
-            <LeadDrawer
-                isOpen={drawerOpen}
-                onClose={() => { setDrawerOpen(false); setSelected(null); }}
+            <LeadModal
+                isOpen={modalOpen}
+                onClose={close}
                 initial={selected}
                 onSubmit={handleSubmit}
-                loading={saving}
+                saving={saving}
                 users={users}
+                currentUserId={user?._id}
+                onLeadUpdate={() => load(page, search)}
             />
 
-            {detailId && (
-                <LeadDetailModal
-                    leadId={detailId}
-                    onClose={() => setDetailId(null)}
-                    onEdit={(lead) => { setDetailId(null); openEdit(lead); }}
-                />
-            )}
+            <LeadImport
+                isOpen={importOpen}
+                onClose={() => setImportOpen(false)}
+                onDone={() => { setPage(1); load(1, search); }}
+            />
         </div>
     );
 };
