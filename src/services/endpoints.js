@@ -193,6 +193,7 @@ export const ENDPOINTS = {
     UPDATE:    (id) => `/api/leads/${id}`,
     DELETE:    (id) => `/api/leads/${id}`,
     ADD_COMMUNICATION: (id) => `/api/leads/${id}/communications`,
-    IMPORT_CSV: `/api/leads/import/csv`,
+    IMPORT_CSV:   `/api/leads/import/csv`,
+    IMPORT_BATCH: `/api/leads/import/batch`,
   },
 };
