@@ -11,4 +11,4 @@ export const deleteLead       = (id)             => api.delete(L.DELETE(id)).the
 export const addCommunication = (id, data)       => api.post(L.ADD_COMMUNICATION(id), data).then(r => r.data);
 export const findByContact    = (contact)        => api.get(L.GET_ALL, { params: { search: contact } }).then(r => r.data);
 export const importLeadsBatch = (rows) =>
-    api.post(L.IMPORT_BATCH, { rows }, { timeout: 30000 }).then(r => r.data);
+    api.post(L.IMPORT_BATCH, { rows }, { timeout: 60000 }).then(r => r.data);

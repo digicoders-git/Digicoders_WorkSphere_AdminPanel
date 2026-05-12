@@ -1,12 +1,26 @@
-import { useState, useRef } from "react";
-import { X, Upload, FileText, CheckCircle, AlertCircle, Download, Loader, RefreshCw, Eye } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { X, Upload, FileText, CheckCircle, AlertCircle, Download, Loader, RefreshCw, Eye, Zap } from "lucide-react";
 import { toast } from "react-toastify";
 import { parse } from "papaparse";
 import { importLeadsBatch } from "../services/leadService";
 
 // ─── constants ────────────────────────────────────────────────────────────────
-const BATCH_SIZE   = 100;
-const PREVIEW_ROWS = 3;
+const BATCH_SIZE    = 500;
+const CONCURRENCY   = 3;
+const PREVIEW_ROWS  = 3;
+
+const FUN_MESSAGES = [
+    "Waking up the database hamsters… 🐹",
+    "Convincing leads to join the party… 🎉",
+    "Turbo-charging your pipeline… 🚀",
+    "Herding data cats… 🐱",
+    "Sprinkling CRM magic dust… ✨",
+    "Teaching rows to fly in formation… 🦅",
+    "Negotiating with the server… 🤝",
+    "Rows are boarding the express train… 🚄",
+    "Almost there, hold your horses… 🐴",
+    "Making your competitors jealous… 😎",
+];
 
 const VALID_STATUSES = ["New Lead", "Contacted", "Meeting Scheduled", "Proposal Sent",
     "Sent to Project Team", "Project Done", "On Hold", "Cancelled"];
@@ -78,15 +92,27 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
     const [inserted, setInserted]   = useState(0);
     const [skipped, setSkipped]     = useState(0);
     const [aborted, setAborted]     = useState(false);
-    const abortRef = useRef(false);
+    const [speed, setSpeed]         = useState(0);   // rows/sec
+    const [msgIdx, setMsgIdx]       = useState(0);
+    const abortRef  = useRef(false);
+    const startRef  = useRef(0);
+    const uploadedRef = useRef(0);
 
     const inputRef = useRef(null);
+
+    // rotate fun message every 3 s during upload
+    useEffect(() => {
+        if (stage !== "uploading") return;
+        const id = setInterval(() => setMsgIdx(i => (i + 1) % FUN_MESSAGES.length), 3000);
+        return () => clearInterval(id);
+    }, [stage]);
 
     const reset = () => {
         setStage("idle"); setFile(null); setParsing(false);
         setHeaders([]); setValidRows([]); setRowErrors([]);
         setUploaded(0); setTotal(0); setInserted(0); setSkipped(0);
-        setAborted(false); abortRef.current = false;
+        setAborted(false); setSpeed(0); setMsgIdx(0);
+        abortRef.current = false; uploadedRef.current = 0;
     };
 
     const handleClose = () => { reset(); onClose(); };
@@ -142,32 +168,45 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
         });
     };
 
-    // ── upload in batches ──────────────────────────────────────────────────────
+    // ── upload with concurrency ────────────────────────────────────────────────
     const handleUpload = async () => {
         setStage("uploading");
         setTotal(validRows.length);
         setUploaded(0); setInserted(0); setSkipped(0);
-        setAborted(false); abortRef.current = false;
+        setAborted(false); setSpeed(0); setMsgIdx(0);
+        abortRef.current = false; uploadedRef.current = 0;
+        startRef.current = Date.now();
 
-        let ins = 0, skp = 0, done = 0;
+        // build batch queue
+        const batches = [];
+        for (let i = 0; i < validRows.length; i += BATCH_SIZE)
+            batches.push(validRows.slice(i, i + BATCH_SIZE));
 
-        for (let i = 0; i < validRows.length; i += BATCH_SIZE) {
-            if (abortRef.current) { setAborted(true); break; }
+        let ins = 0, skp = 0;
+        let idx = 0; // next batch index to dispatch
 
-            const batch = validRows.slice(i, i + BATCH_SIZE);
-            try {
-                const res = await importLeadsBatch(batch);
-                ins += res.inserted || 0;
-                skp += res.skipped  || 0;
-            } catch {
-                // batch failed — continue with next batch, don't abort
+        const runWorker = async () => {
+            while (idx < batches.length) {
+                if (abortRef.current) break;
+                const batch = batches[idx++];
+                try {
+                    const res = await importLeadsBatch(batch);
+                    ins += res.inserted || 0;
+                    skp += res.skipped  || 0;
+                } catch { /* batch failed — keep going */ }
+
+                uploadedRef.current += batch.length;
+                const elapsed = (Date.now() - startRef.current) / 1000 || 1;
+                setSpeed(Math.round(uploadedRef.current / elapsed));
+                setUploaded(uploadedRef.current);
+                setInserted(ins);
+                setSkipped(skp);
             }
-            done += batch.length;
-            setUploaded(done);
-            setInserted(ins);
-            setSkipped(skp);
-        }
+        };
 
+        await Promise.all(Array.from({ length: CONCURRENCY }, runWorker));
+
+        if (abortRef.current) setAborted(true);
         setStage("done");
         if (ins > 0) { toast.success(`${ins} leads imported`); onDone?.(); }
         else toast.info("Import complete — no new leads inserted");
@@ -387,37 +426,67 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
                     )}
 
                     {/* ── STAGE: uploading ── */}
-                    {stage === "uploading" && (
-                        <div className="space-y-5 py-4">
-                            <div className="text-center">
-                                <p className="text-3xl font-bold text-blue-600 tabular-nums">
-                                    {uploaded.toLocaleString()}
-                                    <span className="text-lg text-gray-400 font-normal"> / {total.toLocaleString()}</span>
+                    {stage === "uploading" && (() => {
+                        const pct = total ? (uploaded / total) * 100 : 0;
+                        const remaining = speed > 0 ? Math.ceil((total - uploaded) / speed) : null;
+                        const eta = remaining !== null
+                            ? remaining >= 60 ? `${Math.floor(remaining / 60)}m ${remaining % 60}s` : `${remaining}s`
+                            : "—";
+                        return (
+                            <div className="space-y-4 py-4">
+                                {/* fun message */}
+                                <p className="text-center text-sm text-blue-500 font-medium animate-pulse min-h-[20px]">
+                                    {FUN_MESSAGES[msgIdx]}
                                 </p>
-                                <p className="text-xs text-gray-500 mt-1">rows processed</p>
-                            </div>
 
-                            <div className="w-full bg-gray-100 rounded-full h-2.5">
-                                <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
-                                    style={{ width: `${total ? (uploaded / total) * 100 : 0}%` }} />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-center">
-                                    <p className="text-xl font-bold text-green-600 tabular-nums">{inserted.toLocaleString()}</p>
-                                    <p className="text-[10px] text-green-600 font-medium mt-0.5">Inserted</p>
+                                {/* big counter */}
+                                <div className="text-center">
+                                    <p className="text-3xl font-bold text-blue-600 tabular-nums">
+                                        {uploaded.toLocaleString()}
+                                        <span className="text-lg text-gray-400 font-normal"> / {total.toLocaleString()}</span>
+                                    </p>
+                                    <p className="text-xs text-gray-500 mt-0.5">{pct.toFixed(1)}% complete</p>
                                 </div>
-                                <div className="bg-yellow-50 border border-yellow-100 rounded-xl p-3 text-center">
-                                    <p className="text-xl font-bold text-yellow-600 tabular-nums">{skipped.toLocaleString()}</p>
-                                    <p className="text-[10px] text-yellow-600 font-medium mt-0.5">Skipped (duplicates)</p>
-                                </div>
-                            </div>
 
-                            <p className="text-[10px] text-gray-400 text-center">
-                                Uploading in batches of {BATCH_SIZE} — already saved rows are safe if you stop
-                            </p>
-                        </div>
-                    )}
+                                {/* animated progress bar */}
+                                <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+                                    <div
+                                        className="h-3 rounded-full transition-all duration-500"
+                                        style={{
+                                            width: `${pct}%`,
+                                            background: "linear-gradient(90deg, #3b82f6, #6366f1, #8b5cf6)",
+                                            backgroundSize: "200% 100%",
+                                            animation: "shimmer 1.5s infinite linear",
+                                        }}
+                                    />
+                                </div>
+
+                                {/* speed + ETA */}
+                                <div className="flex justify-center gap-6 text-xs text-gray-500">
+                                    <span className="flex items-center gap-1">
+                                        <Zap size={11} className="text-yellow-400" />
+                                        {speed > 0 ? `${speed.toLocaleString()} rows/sec` : "calculating…"}
+                                    </span>
+                                    <span>ETA: {eta}</span>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-center">
+                                        <p className="text-xl font-bold text-green-600 tabular-nums">{inserted.toLocaleString()}</p>
+                                        <p className="text-[10px] text-green-600 font-medium mt-0.5">Inserted</p>
+                                    </div>
+                                    <div className="bg-yellow-50 border border-yellow-100 rounded-xl p-3 text-center">
+                                        <p className="text-xl font-bold text-yellow-600 tabular-nums">{skipped.toLocaleString()}</p>
+                                        <p className="text-[10px] text-yellow-600 font-medium mt-0.5">Skipped (duplicates)</p>
+                                    </div>
+                                </div>
+
+                                <p className="text-[10px] text-gray-400 text-center">
+                                    {CONCURRENCY} concurrent batches of {BATCH_SIZE} — rows already saved are safe if you stop
+                                </p>
+                            </div>
+                        );
+                    })()}
 
                     {/* ── STAGE: done ── */}
                     {stage === "done" && (
