@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Plus, X, Pencil, Trash2, Eye, User, Send, MessageSquare, ChevronLeft, ChevronRight, Upload } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Eye, User, Send, MessageSquare, ChevronLeft, ChevronRight, Upload, Settings } from "lucide-react";
 import { toast } from "react-toastify";
 import { useStore } from "../../../context/StoreContext";
 import { fetchUsers } from "../../employee/services/UserService.jsx";
-import { getLeads, getLeadById, createLead, updateLead, deleteLead, addCommunication } from "../services/leadService";
+import { getLeads, getLeadById, createLead, updateLead, deleteLead, addCommunication, getFieldConfig } from "../services/leadService";
 import LeadCommunication from "../components/LeadCommunication.jsx";
 import LeadHistory from "../components/LeadHistory.jsx";
 import LeadImport from "../components/LeadImport.jsx";
+import LeadFieldManager from "../components/LeadFieldManager.jsx";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const fmtUS = (raw = "") => {
@@ -63,12 +64,16 @@ const NewLeadCommForm = ({ comm, onChange }) => (
 );
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
-const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentUserId, onLeadUpdate }) => {
-    const emptyForm = useCallback(() => ({
-        contactNumber: "", orgName: "", address: "", contactPerson: "",
-        designation: "", cellNumber: "", email: "", rooms: "", extra: "", status: "New Lead",
-        assignedTo: currentUserId || "",
-    }), [currentUserId]);
+const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentUserId, onLeadUpdate, customFields }) => {
+    const emptyForm = useCallback(() => {
+        const base = {
+            contactNumber: "", orgName: "", address: "", contactPerson: "",
+            designation: "", cellNumber: "", email: "", rooms: "", extra: "", status: "New Lead",
+            assignedTo: currentUserId || "",
+        };
+        customFields.forEach(f => { base[f.key] = ""; });
+        return base;
+    }, [currentUserId, customFields]);
 
     const [form, setForm] = useState(emptyForm);
     const [viewMode, setViewMode] = useState(false);
@@ -166,8 +171,6 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
     const handleSubmit = () => {
         if (!digits(form.contactNumber)) return toast.error("Contact number is required");
         if (!form.orgName.trim()) return toast.error("Organisation name is required");
-        // send empty string as empty string — never send undefined for existing fields
-        // backend $set with empty string keeps the field, undefined would unset it
         const payload = {
             contactNumber: digits(form.contactNumber),
             orgName:       form.orgName.trim(),
@@ -180,7 +183,9 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
             extra:         form.extra,
             status:        form.status,
             assignedTo:    form.assignedTo || null,
+            customFields:  {},
         };
+        customFields.forEach(f => { payload.customFields[f.key] = form[f.key] || ""; });
         onSubmit(payload, matchedLead?._id || null, newComm);
     };
 
@@ -342,6 +347,32 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
                                             ))}
                                         </select>
                                     </div>
+                                    {customFields.map(field => (
+                                        <div key={field.key} className={field.type === "date" ? "" : "sm:col-span-1"}>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1">
+                                                {field.label} {field.required && <span className="text-red-500">*</span>}
+                                            </label>
+                                            {field.type === "text" && (
+                                                <input value={form[field.key] || ""} onChange={e => set(field.key, e.target.value)}
+                                                    placeholder={field.label} className={inp} />
+                                            )}
+                                            {field.type === "number" && (
+                                                <input type="number" value={form[field.key] || ""} onChange={e => set(field.key, e.target.value)}
+                                                    placeholder={field.label} className={inp} />
+                                            )}
+                                            {field.type === "date" && (
+                                                <input type="date" value={form[field.key] || ""} onChange={e => set(field.key, e.target.value)} className={inp} />
+                                            )}
+                                            {field.type === "dropdown" && (
+                                                <select value={form[field.key] || ""} onChange={e => set(field.key, e.target.value)} className={inp}>
+                                                    <option value="">— Select —</option>
+                                                    {(field.options || []).map(opt => (
+                                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                                    ))}
+                                                </select>
+                                            )}
+                                        </div>
+                                    ))}
                                 </div>
                             )}
                         </div>
@@ -373,7 +404,7 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
                                     />
                                 </div>
                                 <div className="px-6 py-5">
-                                    <LeadHistory history={history} />
+                                    <LeadHistory history={history} users={users} />
                                 </div>
                             </>
                         ) : (
@@ -416,8 +447,9 @@ const Pagination = ({ page, total, limit, onChange }) => {
 const Leads = () => {
     const { user } = useStore();
     const isSuperAdmin = user?.role?.name === "super_admin";
-    const canWrite = isSuperAdmin || user?.role?.permissions?.some(p => ["CREATE_LEAD", "UPDATE_LEAD"].includes(p));
-    const canDelete = isSuperAdmin || user?.role?.permissions?.some(p => p === "DELETE_LEAD");
+    const isAdmin = user?.role?.name === "admin" || isSuperAdmin;
+    const canWrite = isAdmin || user?.role?.permissions?.some(p => ["CREATE_LEAD", "UPDATE_LEAD"].includes(p));
+    const canDelete = isAdmin || user?.role?.permissions?.some(p => p === "DELETE_LEAD");
 
     const [leads, setLeads]       = useState([]);
     const [total, setTotal]       = useState(0);
@@ -430,23 +462,32 @@ const Leads = () => {
     const [modalOpen, setModalOpen] = useState(false);
     const [importOpen, setImportOpen] = useState(false);
     const [selected, setSelected] = useState(null);
+    const [customFields, setCustomFields] = useState([]);
+    const [fieldManagerOpen, setFieldManagerOpen] = useState(false);
+    const [filterStatus, setFilterStatus] = useState("");
+    const [filterAssignedTo, setFilterAssignedTo] = useState("");
     const searchDebounce          = useRef(null);
 
     // Server-side load — only fetches current page
-    const load = useCallback(async (pg, q) => {
+    const load = useCallback(async (pg, q, status, assignedTo) => {
         try {
             setLoading(true);
-            const res = await getLeads({ page: pg, limit: PAGE_SIZE, ...(q ? { search: q } : {}) });
+            const params = { page: pg, limit: PAGE_SIZE };
+            if (q) params.search = q;
+            if (status) params.status = status;
+            if (assignedTo) params.assignedTo = assignedTo;
+            const res = await getLeads(params);
             setLeads(res?.leads || []);
             setTotal(res?.total || 0);
         } catch { toast.error("Failed to load leads"); }
         finally { setLoading(false); }
-    }, []); // stable — no deps, pg and q passed as args
+    }, []);
 
-    useEffect(() => { load(page, search); }, [page, search]); // eslint-disable-line
+    useEffect(() => { load(page, search, filterStatus, filterAssignedTo); }, [page, search, filterStatus, filterAssignedTo]); // eslint-disable-line
 
     useEffect(() => {
         fetchUsers().then(r => setUsers(r.users || [])).catch(() => {});
+        getFieldConfig().then(r => setCustomFields(r.fields || [])).catch(() => {});
     }, []);
 
     // Debounce search input — reset to page 1 on new query
@@ -460,6 +501,12 @@ const Leads = () => {
     };
 
     const handlePageChange = (pg) => { setPage(pg); };
+
+    const handleFilterChange = (status, assignedTo) => {
+        setFilterStatus(status);
+        setFilterAssignedTo(assignedTo);
+        setPage(1);
+    };
 
     const openNew  = () => { setSelected(null); setModalOpen(true); };
     const openView = (lead) => { setSelected(lead); setModalOpen(true); };
@@ -484,7 +531,7 @@ const Leads = () => {
                 toast.success("Lead created");
             }
             close();
-            load(page, search);
+            load(page, search, filterStatus, filterAssignedTo);
         } catch (err) {
             toast.error(err?.response?.data?.message || "Failed to save lead");
         } finally { setSaving(false); }
@@ -498,36 +545,73 @@ const Leads = () => {
             // if last item on page > 1, go back
             const newPage = leads.length === 1 && page > 1 ? page - 1 : page;
             setPage(newPage);
-            load(newPage, search);
+            load(newPage, search, filterStatus, filterAssignedTo);
         } catch { toast.error("Failed to delete lead"); }
     };
 
     return (
         <div className="p-6 bg-gray-50 min-h-screen">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Leads</h1>
-                    <p className="text-sm text-gray-500 mt-0.5">
-                        {total > 0 ? `${total.toLocaleString()} total leads` : "Track and manage sales leads"}
-                    </p>
+            <div className="flex flex-col gap-4 mb-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                        <h1 className="text-2xl font-bold text-gray-900">Leads</h1>
+                        <p className="text-sm text-gray-500 mt-0.5">
+                            {total > 0 ? `${total.toLocaleString()} total leads` : "Track and manage sales leads"}
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <input
+                            value={searchInput}
+                            onChange={e => handleSearchInput(e.target.value)}
+                            placeholder="Search leads…"
+                            className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-52"
+                        />
+                        {isAdmin && (
+                            <button onClick={() => setFieldManagerOpen(true)}
+                                className="flex items-center gap-1.5 px-4 py-2 bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">
+                                <Settings size={15} /> Manage Fields
+                            </button>
+                        )}
+                        {canWrite && (
+                            <button onClick={() => setImportOpen(true)}
+                                className="flex items-center gap-1.5 px-4 py-2 bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">
+                                <Upload size={15} /> Import CSV
+                            </button>
+                        )}
+                        {canWrite && (
+                            <button onClick={openNew}
+                                className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
+                                <Plus size={15} /> New Lead
+                            </button>
+                        )}
+                    </div>
                 </div>
-                <div className="flex items-center gap-3">
-                    <input
-                        value={searchInput}
-                        onChange={e => handleSearchInput(e.target.value)}
-                        placeholder="Search leads…"
-                        className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-52"
-                    />
-                    {canWrite && (
-                        <button onClick={() => setImportOpen(true)}
-                            className="flex items-center gap-1.5 px-4 py-2 bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">
-                            <Upload size={15} /> Import CSV
-                        </button>
-                    )}
-                    {canWrite && (
-                        <button onClick={openNew}
-                            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
-                            <Plus size={15} /> New Lead
+
+                {/* Filters */}
+                <div className="flex flex-wrap items-center gap-3 p-3 bg-white rounded-lg border border-gray-200">
+                    <span className="text-xs font-medium text-gray-600 uppercase tracking-wide">Filters:</span>
+                    <select
+                        value={filterStatus}
+                        onChange={e => handleFilterChange(e.target.value, filterAssignedTo)}
+                        className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    >
+                        <option value="">All Statuses</option>
+                        {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <select
+                        value={filterAssignedTo}
+                        onChange={e => handleFilterChange(filterStatus, e.target.value)}
+                        className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    >
+                        <option value="">All Assigned To</option>
+                        {users.map(u => <option key={u._id} value={u._id}>{u.firstName} {u.lastName}</option>)}
+                    </select>
+                    {(filterStatus || filterAssignedTo) && (
+                        <button
+                            onClick={() => handleFilterChange("", "")}
+                            className="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg font-medium transition"
+                        >
+                            Clear Filters
                         </button>
                     )}
                 </div>
@@ -566,9 +650,13 @@ const Leads = () => {
                                         </span>
                                     </td>
                                     <td className="px-4 py-3 text-gray-600">
-                                        {lead.assignedTo
+                                        {lead.assignedTo && typeof lead.assignedTo === "object"
                                             ? `${lead.assignedTo.firstName} ${lead.assignedTo.lastName}`
-                                            : <span className="text-gray-300">—</span>}
+                                            : lead.assignedTo
+                                                ? (users.find(u => u._id === lead.assignedTo?.toString())
+                                                    ? `${users.find(u => u._id === lead.assignedTo?.toString()).firstName} ${users.find(u => u._id === lead.assignedTo?.toString()).lastName}`
+                                                    : <span className="text-gray-300">—</span>)
+                                                : <span className="text-gray-300">—</span>}
                                     </td>
                                     <td className="px-4 py-3">
                                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition justify-end">
@@ -606,13 +694,23 @@ const Leads = () => {
                 saving={saving}
                 users={users}
                 currentUserId={user?._id}
-                onLeadUpdate={() => load(page, search)}
+                onLeadUpdate={() => load(page, search, filterStatus, filterAssignedTo)}
+                customFields={customFields}
+            />
+
+            <LeadFieldManager
+                isOpen={fieldManagerOpen}
+                onClose={() => setFieldManagerOpen(false)}
+                onSave={() => {
+                    getFieldConfig().then(r => setCustomFields(r.fields || [])).catch(() => {});
+                    load(page, search, filterStatus, filterAssignedTo);
+                }}
             />
 
             <LeadImport
                 isOpen={importOpen}
                 onClose={() => setImportOpen(false)}
-                onDone={() => { setPage(1); load(1, search); }}
+                onDone={() => { setPage(1); load(1, search, filterStatus, filterAssignedTo); }}
             />
         </div>
     );

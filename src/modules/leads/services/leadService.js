@@ -12,3 +12,5 @@ export const addCommunication = (id, data)       => api.post(L.ADD_COMMUNICATION
 export const findByContact    = (contact)        => api.get(L.GET_ALL, { params: { search: contact } }).then(r => r.data);
 export const importLeadsBatch = (rows) =>
     api.post(L.IMPORT_BATCH, { rows }, { timeout: 60000 }).then(r => r.data);
+export const getFieldConfig   = ()       => api.get(L.FIELD_CONFIG).then(r => r.data);
+export const saveFieldConfig  = (fields) => api.put(L.FIELD_CONFIG, { fields }).then(r => r.data);

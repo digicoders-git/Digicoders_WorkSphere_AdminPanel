@@ -7,16 +7,26 @@ const fmtDate = (d) =>
         hour: "2-digit", minute: "2-digit",
     });
 
-const ChangeRow = ({ field, from, to }) => (
+// Resolve a value: if it looks like a 24-char hex ObjectId, look it up in users list
+const resolveValue = (val, users) => {
+    if (!val) return null;
+    if (/^[a-f0-9]{24}$/i.test(String(val))) {
+        const u = users.find(u => u._id === val || u._id?.toString() === val);
+        return u ? `${u.firstName} ${u.lastName}` : val;
+    }
+    return val;
+};
+
+const ChangeRow = ({ field, from, to, users }) => (
     <div className="flex items-start gap-2 text-xs">
         <span className="text-gray-500 capitalize min-w-[90px] shrink-0">{field.replace(/([A-Z])/g, " $1")}</span>
-        <span className="text-red-400 line-through truncate max-w-[120px]">{from ?? "—"}</span>
+        <span className="text-red-400 line-through truncate max-w-[120px]">{resolveValue(from, users) ?? "—"}</span>
         <span className="text-gray-400">→</span>
-        <span className="text-green-600 truncate max-w-[120px]">{to ?? "—"}</span>
+        <span className="text-green-600 truncate max-w-[120px]">{resolveValue(to, users) ?? "—"}</span>
     </div>
 );
 
-const LeadHistory = ({ history = [] }) => {
+const LeadHistory = ({ history = [], users = [] }) => {
     const [showAll, setShowAll] = useState(false);
 
     // newest first
@@ -51,7 +61,7 @@ const LeadHistory = ({ history = [] }) => {
                             </div>
                             <div className="space-y-1">
                                 {Object.entries(h.changes || {}).map(([field, { from, to }]) => (
-                                    <ChangeRow key={field} field={field} from={from} to={to} />
+                                    <ChangeRow key={field} field={field} from={from} to={to} users={users} />
                                 ))}
                             </div>
                         </div>
