@@ -81,30 +81,32 @@ const Sidebar = ({ mobileOpen, setMobileOpen }) => {
             `}>
                 {/* Logo */}
                 <div className={`flex items-center h-16 px-4 border-b border-slate-700/50 ${collapsed ? "justify-center" : "justify-between"}`}>
-                    {!collapsed && (
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden">
-                                {user?.companyId?.icon?.url
-                                    ? <img src={user.companyId.icon.url} alt="logo" className="w-full h-full object-cover" />
-                                    : <span>HR</span>}
-                            </div>
-                            <span className="font-bold text-lg tracking-tight">{user?.companyId?.name || "HRMS"}</span>
-                        </div>
-                    )}
-                    {collapsed && (
+                    <div className="flex items-center gap-3">
                         <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 overflow-hidden">
                             {user?.companyId?.icon?.url
                                 ? <img src={user.companyId.icon.url} alt="logo" className="w-full h-full object-cover" />
                                 : <span>HR</span>}
                         </div>
+                        {!collapsed && (
+                            <span className="font-bold text-base tracking-tight text-white">HRMS</span>
+                        )}
+                    </div>
+                    {!collapsed && (
+                        <button
+                            onClick={() => window.innerWidth < 768 ? close() : setCollapsed(c => !c)}
+                            className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition"
+                        >
+                            {window.innerWidth < 768 ? <X size={18} /> : <ChevronLeft size={18} />}
+                        </button>
                     )}
-                    {/* Desktop collapse / Mobile close */}
-                    <button
-                        onClick={() => window.innerWidth < 768 ? close() : setCollapsed(c => !c)}
-                        className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition"
-                    >
-                        {window.innerWidth < 768 ? <X size={18} /> : collapsed ? <Menu size={18} /> : <ChevronLeft size={18} />}
-                    </button>
+                    {collapsed && (
+                        <button
+                            onClick={() => setCollapsed(false)}
+                            className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition mt-1"
+                        >
+                            <Menu size={18} />
+                        </button>
+                    )}
                 </div>
 
                 {/* Nav */}

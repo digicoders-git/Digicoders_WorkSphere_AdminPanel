@@ -1,13 +1,12 @@
 import { useState, useRef, useEffect } from "react";
-import { X, Upload, FileText, CheckCircle, AlertCircle, Download, Loader, RefreshCw, Eye, Zap } from "lucide-react";
+import { X, Upload, CheckCircle, AlertCircle, Download, Loader, RefreshCw, Eye } from "lucide-react";
 import { toast } from "react-toastify";
 import { parse } from "papaparse";
 import { importLeadsBatch } from "../services/leadService";
 
 // ─── constants ────────────────────────────────────────────────────────────────
-const BATCH_SIZE    = 500;
-const CONCURRENCY   = 3;
-const PREVIEW_ROWS  = 3;
+const BATCH_SIZE   = 1000;  // 70k rows = 70 requests, ~200ms each = ~14s total
+const PREVIEW_ROWS = 3;
 
 const FUN_MESSAGES = [
     "Waking up the database hamsters… 🐹",
@@ -168,7 +167,7 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
         });
     };
 
-    // ── upload with concurrency ────────────────────────────────────────────────
+    // ── upload sequentially ────────────────────────────────────────────────────
     const handleUpload = async () => {
         setStage("uploading");
         setTotal(validRows.length);
@@ -177,36 +176,44 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
         abortRef.current = false; uploadedRef.current = 0;
         startRef.current = Date.now();
 
-        // build batch queue
-        const batches = [];
-        for (let i = 0; i < validRows.length; i += BATCH_SIZE)
-            batches.push(validRows.slice(i, i + BATCH_SIZE));
+        let ins = 0, skp = 0, failedBatches = 0;
 
-        let ins = 0, skp = 0;
-        let idx = 0; // next batch index to dispatch
+        for (let i = 0; i < validRows.length; i += BATCH_SIZE) {
+            if (abortRef.current) { setAborted(true); break; }
 
-        const runWorker = async () => {
-            while (idx < batches.length) {
-                if (abortRef.current) break;
-                const batch = batches[idx++];
+            const batch = validRows.slice(i, i + BATCH_SIZE);
+            let success = false;
+            let retries = 3;
+
+            while (retries > 0) {
                 try {
                     const res = await importLeadsBatch(batch);
                     ins += res.inserted || 0;
                     skp += res.skipped  || 0;
-                } catch { /* batch failed — keep going */ }
-
-                uploadedRef.current += batch.length;
-                const elapsed = (Date.now() - startRef.current) / 1000 || 1;
-                setSpeed(Math.round(uploadedRef.current / elapsed));
-                setUploaded(uploadedRef.current);
-                setInserted(ins);
-                setSkipped(skp);
+                    success = true;
+                    break;
+                } catch {
+                    retries--;
+                    if (retries > 0) await new Promise(r => setTimeout(r, 1000));
+                }
             }
-        };
 
-        await Promise.all(Array.from({ length: CONCURRENCY }, runWorker));
+            // only count as processed if batch actually reached the server
+            if (success) {
+                uploadedRef.current += batch.length;
+            } else {
+                failedBatches++;
+            }
 
-        if (abortRef.current) setAborted(true);
+            const elapsed = (Date.now() - startRef.current) / 1000 || 1;
+            setSpeed(Math.round(uploadedRef.current / elapsed));
+            setUploaded(uploadedRef.current);
+            setInserted(ins);
+            setSkipped(skp);
+            setFailedBatches(failedBatches);
+        }
+
+        if (!abortRef.current) setAborted(false);
         setStage("done");
         if (ins > 0) { toast.success(`${ins} leads imported`); onDone?.(); }
         else toast.info("Import complete — no new leads inserted");
@@ -451,22 +458,14 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
                                 {/* animated progress bar */}
                                 <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
                                     <div
-                                        className="h-3 rounded-full transition-all duration-500"
-                                        style={{
-                                            width: `${pct}%`,
-                                            background: "linear-gradient(90deg, #3b82f6, #6366f1, #8b5cf6)",
-                                            backgroundSize: "200% 100%",
-                                            animation: "shimmer 1.5s infinite linear",
-                                        }}
+                                        className="h-3 rounded-full transition-all duration-500 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"
+                                        style={{ width: `${pct}%` }}
                                     />
                                 </div>
 
                                 {/* speed + ETA */}
                                 <div className="flex justify-center gap-6 text-xs text-gray-500">
-                                    <span className="flex items-center gap-1">
-                                        <Zap size={11} className="text-yellow-400" />
-                                        {speed > 0 ? `${speed.toLocaleString()} rows/sec` : "calculating…"}
-                                    </span>
+                                    <span>{speed > 0 ? `${speed.toLocaleString()} rows/sec` : "calculating…"}</span>
                                     <span>ETA: {eta}</span>
                                 </div>
 
@@ -482,7 +481,7 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
                                 </div>
 
                                 <p className="text-[10px] text-gray-400 text-center">
-                                    {CONCURRENCY} concurrent batches of {BATCH_SIZE} — rows already saved are safe if you stop
+                                    Batches of {BATCH_SIZE} — rows already saved are safe if you stop
                                 </p>
                             </div>
                         );
