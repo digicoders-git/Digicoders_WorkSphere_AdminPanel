@@ -348,6 +348,7 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
                                     {/* Render custom fields in edit mode */}
                                     {customFields.map(field => renderCustomField(field, false))}
                                     <div>
+                                        
                                         <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
                                         <select value={form.status} onChange={e => set("status", e.target.value)} className={inp}>
                                             {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
