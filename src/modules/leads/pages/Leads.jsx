@@ -68,8 +68,7 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
     const emptyForm = useCallback(() => {
         const base = {
             contactNumber: "", orgName: "", address: "", contactPerson: "",
-            designation: "", cellNumber: "", email: "", rooms: "", extra: "", status: "New Lead",
-            assignedTo: currentUserId || "",
+            email: "", status: "New Lead", assignedTo: currentUserId || "",
         };
         customFields.forEach(f => { base[f.key] = ""; });
         return base;
@@ -93,8 +92,6 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
     useEffect(() => {
         if (!isOpen) { setMatchedLead(null); setFullLead(null); return; }
         if (initial) {
-            // initial from list only has 6 projected fields — load full doc first,
-            // then populate form so no fields appear blank
             setViewMode(true);
             setFullLead(null);
             getLeadById(initial._id)
@@ -102,19 +99,20 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
                     const lead = r.lead || null;
                     setFullLead(lead);
                     if (lead) {
-                        setForm({
+                        const formData = {
                             contactNumber: fmtUS(lead.contactNumber || ""),
                             orgName:       lead.orgName || "",
                             address:       lead.address || "",
                             contactPerson: lead.contactPerson || "",
-                            designation:   lead.designation || "",
-                            cellNumber:    fmtUS(lead.cellNumber || ""),
                             email:         lead.email || "",
-                            rooms:         lead.rooms || "",
-                            extra:         lead.extra || "",
                             status:        lead.status || "New Lead",
                             assignedTo:    lead.assignedTo?._id || lead.assignedTo || "",
+                        };
+                        // Add custom fields
+                        customFields.forEach(f => {
+                            formData[f.key] = lead.customFields?.get?.(f.key) || lead.customFields?.[f.key] || "";
                         });
+                        setForm(formData);
                     }
                 })
                 .catch(() => {});
@@ -125,7 +123,7 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
             setMatchedLead(null);
             setFullLead(null);
         }
-    }, [isOpen, initial, emptyForm]);
+    }, [isOpen, initial, emptyForm, customFields]);
 
     const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -146,19 +144,16 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
             const match = leads.find(l => digits(l.contactNumber || "") === d);
             if (match) {
                 setMatchedLead(match);
-                setForm({
+                const formData = {
                     contactNumber: fmtUS(match.contactNumber || ""),
                     orgName:       match.orgName || "",
                     address:       match.address || "",
                     contactPerson: match.contactPerson || "",
-                    designation:   match.designation || "",
-                    cellNumber:    fmtUS(match.cellNumber || ""),
                     email:         match.email || "",
-                    rooms:         match.rooms || "",
-                    extra:         match.extra || "",
                     status:        match.status || "New Lead",
                     assignedTo:    match.assignedTo?._id || match.assignedTo || "",
-                });
+                };
+                setForm(formData);
                 getLeadById(match._id).then(r => setFullLead(r.lead || null)).catch(() => {});
                 toast.info("Existing lead found — will update on save");
             } else {
@@ -171,16 +166,13 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
     const handleSubmit = () => {
         if (!digits(form.contactNumber)) return toast.error("Contact number is required");
         if (!form.orgName.trim()) return toast.error("Organisation name is required");
+        
         const payload = {
             contactNumber: digits(form.contactNumber),
             orgName:       form.orgName.trim(),
             address:       form.address,
             contactPerson: form.contactPerson,
-            designation:   form.designation,
-            cellNumber:    digits(form.cellNumber) || "",
             email:         form.email,
-            rooms:         form.rooms,
-            extra:         form.extra,
             status:        form.status,
             assignedTo:    form.assignedTo || null,
             customFields:  {},
@@ -205,6 +197,49 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
     const communications = fullLead?.communications || [];
     const history = fullLead?.history || [];
     const activeLeadId = initial?._id || matchedLead?._id;
+
+    // Render custom field based on type
+    const renderCustomField = (field, isViewMode = false) => {
+        const value = isViewMode 
+            ? (activeLead?.customFields?.get?.(field.key) || activeLead?.customFields?.[field.key] || "")
+            : (form[field.key] || "");
+        
+        if (isViewMode) {
+            return (
+                <div key={field.key}>
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">{field.label}</p>
+                    <p className="text-sm text-gray-800">{value || <span className="text-gray-300">—</span>}</p>
+                </div>
+            );
+        }
+
+        return (
+            <div key={field.key} className={field.type === "date" ? "" : "sm:col-span-1"}>
+                <label className="block text-xs font-medium text-gray-500 mb-1">
+                    {field.label} {field.required && <span className="text-red-500">*</span>}
+                </label>
+                {field.type === "text" && (
+                    <input value={form[field.key] || ""} onChange={e => set(field.key, e.target.value)}
+                        placeholder={field.label} className={inp} />
+                )}
+                {field.type === "number" && (
+                    <input type="number" value={form[field.key] || ""} onChange={e => set(field.key, e.target.value)}
+                        placeholder={field.label} className={inp} />
+                )}
+                {field.type === "date" && (
+                    <input type="date" value={form[field.key] || ""} onChange={e => set(field.key, e.target.value)} className={inp} />
+                )}
+                {field.type === "dropdown" && (
+                    <select value={form[field.key] || ""} onChange={e => set(field.key, e.target.value)} className={inp}>
+                        <option value="">— Select —</option>
+                        {(field.options || []).map(opt => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                    </select>
+                )}
+            </div>
+        );
+    };
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -260,11 +295,7 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
                                         { label: "Organisation Name", value: activeLead?.orgName },
                                         { label: "Address",           value: activeLead?.address },
                                         { label: "Contact Person",    value: activeLead?.contactPerson },
-                                        { label: "Designation",       value: activeLead?.designation },
-                                        { label: "Cell Number",       value: activeLead?.cellNumber ? fmtUS(activeLead.cellNumber) : null },
                                         { label: "Email",             value: activeLead?.email },
-                                        { label: "Rooms",             value: activeLead?.rooms },
-                                        { label: "Extra",             value: activeLead?.extra },
                                         { label: "Status",            value: activeLead?.status },
                                         {
                                             label: "Assigned To",
@@ -278,6 +309,8 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
                                             <p className="text-sm text-gray-800">{value || <span className="text-gray-300">—</span>}</p>
                                         </div>
                                     ))}
+                                    {/* Render custom fields in view mode */}
+                                    {customFields.map(field => renderCustomField(field, true))}
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -296,42 +329,24 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
                                         <input value={form.orgName} onChange={e => set("orgName", e.target.value)}
                                             placeholder="Company / org name" className={inp} />
                                     </div>
-                                    <div className="sm:col-span-2">
-                                        <label className="block text-xs font-medium text-gray-500 mb-1">Address</label>
-                                        <input value={form.address} onChange={e => set("address", e.target.value)}
-                                            placeholder="Full address" className={inp} />
-                                    </div>
+                                   
                                     <div>
-                                        <label className="block text-xs font-medium text-gray-500 mb-1">Contact Person</label>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">Legal Name</label>
                                         <input value={form.contactPerson} onChange={e => set("contactPerson", e.target.value)}
                                             placeholder="Name of contact" className={inp} />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-medium text-gray-500 mb-1">Designation</label>
-                                        <input value={form.designation} onChange={e => set("designation", e.target.value)}
-                                            placeholder="Their designation" className={inp} />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-medium text-gray-500 mb-1">Cell Number</label>
-                                        <input value={form.cellNumber}
-                                            onChange={e => set("cellNumber", fmtUS(extractPhone(e.target.value)))}
-                                            placeholder="Alternate number" className={inp} />
                                     </div>
                                     <div>
                                         <label className="block text-xs font-medium text-gray-500 mb-1">Email</label>
                                         <input type="email" value={form.email} onChange={e => set("email", e.target.value)}
                                             placeholder="email@example.com" className={inp} />
                                     </div>
-                                    <div>
-                                        <label className="block text-xs font-medium text-gray-500 mb-1">Rooms</label>
-                                        <input value={form.rooms} onChange={e => set("rooms", e.target.value)}
-                                            placeholder="e.g. 3BHK, Studio" className={inp} />
+                                     <div className="sm:col-span-2">
+                                        <label className="block text-xs font-medium text-gray-500 mb-1">Address</label>
+                                        <input value={form.address} onChange={e => set("address", e.target.value)}
+                                            placeholder="Full address" className={inp} />
                                     </div>
-                                    <div>
-                                        <label className="block text-xs font-medium text-gray-500 mb-1">Extra</label>
-                                        <input value={form.extra} onChange={e => set("extra", e.target.value)}
-                                            placeholder="Additional info" className={inp} />
-                                    </div>
+                                    {/* Render custom fields in edit mode */}
+                                    {customFields.map(field => renderCustomField(field, false))}
                                     <div>
                                         <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
                                         <select value={form.status} onChange={e => set("status", e.target.value)} className={inp}>
@@ -347,32 +362,7 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
                                             ))}
                                         </select>
                                     </div>
-                                    {customFields.map(field => (
-                                        <div key={field.key} className={field.type === "date" ? "" : "sm:col-span-1"}>
-                                            <label className="block text-xs font-medium text-gray-500 mb-1">
-                                                {field.label} {field.required && <span className="text-red-500">*</span>}
-                                            </label>
-                                            {field.type === "text" && (
-                                                <input value={form[field.key] || ""} onChange={e => set(field.key, e.target.value)}
-                                                    placeholder={field.label} className={inp} />
-                                            )}
-                                            {field.type === "number" && (
-                                                <input type="number" value={form[field.key] || ""} onChange={e => set(field.key, e.target.value)}
-                                                    placeholder={field.label} className={inp} />
-                                            )}
-                                            {field.type === "date" && (
-                                                <input type="date" value={form[field.key] || ""} onChange={e => set(field.key, e.target.value)} className={inp} />
-                                            )}
-                                            {field.type === "dropdown" && (
-                                                <select value={form[field.key] || ""} onChange={e => set(field.key, e.target.value)} className={inp}>
-                                                    <option value="">— Select —</option>
-                                                    {(field.options || []).map(opt => (
-                                                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                                    ))}
-                                                </select>
-                                            )}
-                                        </div>
-                                    ))}
+                                    
                                 </div>
                             )}
                         </div>
@@ -455,7 +445,7 @@ const Leads = () => {
     const [total, setTotal]       = useState(0);
     const [page, setPage]         = useState(1);
     const [search, setSearch]     = useState("");
-    const [searchInput, setSearchInput] = useState("");  // raw input, debounced into search
+    const [searchInput, setSearchInput] = useState("");
     const [users, setUsers]       = useState([]);
     const [saving, setSaving]     = useState(false);
     const [loading, setLoading]   = useState(false);
@@ -468,7 +458,6 @@ const Leads = () => {
     const [filterAssignedTo, setFilterAssignedTo] = useState("");
     const searchDebounce          = useRef(null);
 
-    // Server-side load — only fetches current page
     const load = useCallback(async (pg, q, status, assignedTo) => {
         try {
             setLoading(true);
@@ -490,7 +479,6 @@ const Leads = () => {
         getFieldConfig().then(r => setCustomFields(r.fields || [])).catch(() => {});
     }, []);
 
-    // Debounce search input — reset to page 1 on new query
     const handleSearchInput = (val) => {
         setSearchInput(val);
         clearTimeout(searchDebounce.current);
@@ -542,7 +530,6 @@ const Leads = () => {
         try {
             await deleteLead(id);
             toast.success("Lead deleted");
-            // if last item on page > 1, go back
             const newPage = leads.length === 1 && page > 1 ? page - 1 : page;
             setPage(newPage);
             load(newPage, search, filterStatus, filterAssignedTo);
@@ -632,7 +619,7 @@ const Leads = () => {
                     <table className="w-full text-sm">
                         <thead className="bg-gray-50 border-b border-gray-200">
                             <tr>
-                                {["Contact Number", "Organisation", "Contact Person", "Cell Number", "Status", "Assigned To", ""].map(h => (
+                                {["Contact Number", "Organisation", "Contact Person", "Status", "Assigned To", ""].map(h => (
                                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                                 ))}
                             </tr>
@@ -643,7 +630,6 @@ const Leads = () => {
                                     <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">{fmtUS(lead.contactNumber || "")}</td>
                                     <td className="px-4 py-3 text-gray-700">{lead.orgName}</td>
                                     <td className="px-4 py-3 text-gray-600">{lead.contactPerson || "—"}</td>
-                                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{lead.cellNumber ? fmtUS(lead.cellNumber) : "—"}</td>
                                     <td className="px-4 py-3">
                                         <span className={`inline-block text-[10px] px-2 py-0.5 rounded-full font-medium border whitespace-nowrap ${STATUS_COLORS[lead.status] || ""}`}>
                                             {lead.status}
@@ -711,6 +697,7 @@ const Leads = () => {
                 isOpen={importOpen}
                 onClose={() => setImportOpen(false)}
                 onDone={() => { setPage(1); load(1, search, filterStatus, filterAssignedTo); }}
+                customFields={customFields}
             />
         </div>
     );

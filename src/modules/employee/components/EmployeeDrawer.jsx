@@ -109,9 +109,11 @@ const EmployeeDrawer = ({ isOpen, onClose, initialData, companies, roles, shifts
     const isEdit = !!initialData;
     const [form, setForm] = useState({});
     const [showPassword, setShowPassword] = useState(false);
+    const [errors, setErrors] = useState({});
 
     useEffect(() => {
         setForm(initialData || {});
+        setErrors({});
     }, [initialData, isOpen]);
 
     const set = (name, value) => setForm((prev) => ({ ...prev, [name]: value }));
@@ -121,9 +123,25 @@ const EmployeeDrawer = ({ isOpen, onClose, initialData, companies, roles, shifts
         setForm(updated);
     };
 
+    const validateForm = () => {
+        const newErrors = {};
+        if (!form.firstName?.trim()) newErrors.firstName = "First name is required";
+        if (!form.lastName?.trim()) newErrors.lastName = "Last name is required";
+        if (!form.email?.trim()) newErrors.email = "Email is required";
+        if (!isEdit && !form.password) newErrors.password = "Password is required";
+        if (!isEdit && form.password && form.password.length < 6) newErrors.password = "Password must be at least 6 characters";
+        if (!form.companyId) newErrors.companyId = "Company is required";
+        if (!form.role) newErrors.role = "Role is required";
+        
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+    };
+
     const handleSubmit = (e) => {
         e.preventDefault();
-        onSubmit(form);
+        if (validateForm()) {
+            onSubmit(form);
+        }
     };
 
     if (!isOpen) return null;
@@ -140,7 +158,7 @@ const EmployeeDrawer = ({ isOpen, onClose, initialData, companies, roles, shifts
                 <div className="flex items-center justify-between px-6 py-4 border-b">
                     <div>
                         <h2 className="text-lg font-semibold text-gray-900">{isEdit ? "Edit Employee" : "Add Employee"}</h2>
-                        <p className="text-xs text-gray-400 mt-0.5">{isEdit ? "Update employee details" : "Fill in the details to create a new employee"}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">{isEdit ? "Update employee details" : "Fill in required fields to create a new employee"}</p>
                     </div>
                     <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 transition">
                         <X size={18} />
@@ -156,12 +174,18 @@ const EmployeeDrawer = ({ isOpen, onClose, initialData, companies, roles, shifts
                             <User size={13} /> Personal Information
                         </p>
                         <div className="grid grid-cols-2 gap-4">
-                            <Field label="First Name" icon={User}>
-                                <input type="text" value={form.firstName || ""} onChange={(e) => set("firstName", e.target.value)} placeholder="John" required />
-                            </Field>
-                            <Field label="Last Name" icon={User}>
-                                <input type="text" value={form.lastName || ""} onChange={(e) => set("lastName", e.target.value)} placeholder="Doe" required />
-                            </Field>
+                            <div>
+                                <Field label="First Name *" icon={User}>
+                                    <input type="text" value={form.firstName || ""} onChange={(e) => set("firstName", e.target.value)} placeholder="John" />
+                                </Field>
+                                {errors.firstName && <p className="text-xs text-red-500 mt-1">{errors.firstName}</p>}
+                            </div>
+                            <div>
+                                <Field label="Last Name *" icon={User}>
+                                    <input type="text" value={form.lastName || ""} onChange={(e) => set("lastName", e.target.value)} placeholder="Doe" />
+                                </Field>
+                                {errors.lastName && <p className="text-xs text-red-500 mt-1">{errors.lastName}</p>}
+                            </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4 mt-4">
                             <Field label="Gender">
@@ -183,9 +207,12 @@ const EmployeeDrawer = ({ isOpen, onClose, initialData, companies, roles, shifts
                             <Mail size={13} /> Contact Details
                         </p>
                         <div className="grid grid-cols-2 gap-4">
-                            <Field label="Email" icon={Mail}>
-                                <input type="email" value={form.email || ""} onChange={(e) => set("email", e.target.value)} placeholder="john@example.com" required />
-                            </Field>
+                            <div>
+                                <Field label="Email *" icon={Mail}>
+                                    <input type="email" value={form.email || ""} onChange={(e) => set("email", e.target.value)} placeholder="john@example.com" />
+                                </Field>
+                                {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
+                            </div>
                             <Field label="Phone" icon={Phone}>
                                 <input type="text" value={form.phone || ""} onChange={(e) => set("phone", e.target.value)} placeholder="+91 00000 00000" />
                             </Field>
@@ -197,7 +224,7 @@ const EmployeeDrawer = ({ isOpen, onClose, initialData, companies, roles, shifts
                         </div>
                         {!isEdit && (
                             <div className="mt-4">
-                                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Password</label>
+                                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Password *</label>
                                 <div className="relative">
                                     <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                                     <input
@@ -205,7 +232,6 @@ const EmployeeDrawer = ({ isOpen, onClose, initialData, companies, roles, shifts
                                         value={form.password || ""}
                                         onChange={(e) => set("password", e.target.value)}
                                         placeholder="••••••••"
-                                        required
                                         className="w-full border border-gray-200 rounded-lg py-2 pl-9 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                                     />
                                     <button type="button" onClick={() => setShowPassword((p) => !p)}
@@ -213,6 +239,7 @@ const EmployeeDrawer = ({ isOpen, onClose, initialData, companies, roles, shifts
                                         {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                                     </button>
                                 </div>
+                                {errors.password && <p className="text-xs text-red-500 mt-1">{errors.password}</p>}
                             </div>
                         )}
                     </section>
@@ -225,18 +252,24 @@ const EmployeeDrawer = ({ isOpen, onClose, initialData, companies, roles, shifts
                             <Briefcase size={13} /> Employment Details
                         </p>
                         <div className="grid grid-cols-2 gap-4">
-                            <Field label="Company" icon={Building2}>
-                                <select value={form.companyId || ""} onChange={(e) => handleCompanyChange(e.target.value)} required>
-                                    <option value="">Select company</option>
-                                    {companies.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
-                                </select>
-                            </Field>
-                            <Field label="Role" icon={ShieldCheck}>
-                                <select value={form.role || ""} onChange={(e) => set("role", e.target.value)}>
-                                    <option value="">Select role</option>
-                                    {roles.map((r) => <option key={r._id} value={r._id}>{r.name}</option>)}
-                                </select>
-                            </Field>
+                            <div>
+                                <Field label="Company *" icon={Building2}>
+                                    <select value={form.companyId || ""} onChange={(e) => handleCompanyChange(e.target.value)}>
+                                        <option value="">Select company</option>
+                                        {companies.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
+                                    </select>
+                                </Field>
+                                {errors.companyId && <p className="text-xs text-red-500 mt-1">{errors.companyId}</p>}
+                            </div>
+                            <div>
+                                <Field label="Role *" icon={ShieldCheck}>
+                                    <select value={form.role || ""} onChange={(e) => set("role", e.target.value)}>
+                                        <option value="">Select role</option>
+                                        {roles.map((r) => <option key={r._id} value={r._id}>{r.name}</option>)}
+                                    </select>
+                                </Field>
+                                {errors.role && <p className="text-xs text-red-500 mt-1">{errors.role}</p>}
+                            </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4 mt-4">
                             <Field label="Employee Code" icon={Briefcase}>

@@ -128,10 +128,18 @@ const User = () => {
         if (!hasPermission("Create_USER")) return;
         try {
             setLoading(true);
-            await createUser(data);
-            loadUsers();
-            setOpen(false);
+            const res = await createUser(data);
+            if (res.success) {
+                toast.success(res.message || "Employee created successfully");
+                loadUsers();
+                setOpen(false);
+            } else {
+                const errorMsg = Array.isArray(res.errors) ? res.errors.join(", ") : res.message;
+                toast.error(errorMsg || "Failed to create employee");
+            }
         } catch (err) {
+            const errorMsg = err?.response?.data?.message || err?.message || "Failed to create employee";
+            toast.error(errorMsg);
             console.error(err);
         } finally {
             setLoading(false);
@@ -142,10 +150,18 @@ const User = () => {
         if (!hasPermission("UPDATE_USER")) return;
         try {
             setLoading(true);
-            await updateUser(data);
-            loadUsers();
-            setOpen(false);
+            const res = await updateUser(data);
+            if (res.success) {
+                toast.success(res.message || "Employee updated successfully");
+                loadUsers();
+                setOpen(false);
+            } else {
+                const errorMsg = Array.isArray(res.errors) ? res.errors.join(", ") : res.message;
+                toast.error(errorMsg || "Failed to update employee");
+            }
         } catch (err) {
+            const errorMsg = err?.response?.data?.message || err?.message || "Failed to update employee";
+            toast.error(errorMsg);
             console.error(err);
         } finally {
             setLoading(false);

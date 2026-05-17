@@ -5,7 +5,7 @@ import { parse } from "papaparse";
 import { importLeadsBatch } from "../services/leadService";
 
 // ─── constants ────────────────────────────────────────────────────────────────
-const BATCH_SIZE   = 1000;  // 70k rows = 70 requests, ~200ms each = ~14s total
+const BATCH_SIZE   = 1000;
 const PREVIEW_ROWS = 3;
 
 const FUN_MESSAGES = [
@@ -24,26 +24,15 @@ const FUN_MESSAGES = [
 const VALID_STATUSES = ["New Lead", "Contacted", "Meeting Scheduled", "Proposal Sent",
     "Sent to Project Team", "Project Done", "On Hold", "Cancelled"];
 
-const FIELD_MAP = {
+const BASE_FIELD_MAP = {
     contactnumber: "contactNumber", contact_number: "contactNumber",
     orgname: "orgName", org_name: "orgName", organisation: "orgName", company: "orgName",
     address: "address",
     contactperson: "contactPerson", contact_person: "contactPerson",
-    designation: "designation",
-    cellnumber: "cellNumber", cell_number: "cellNumber",
     email: "email",
-    rooms: "rooms",
-    extra: "extra",
     status: "status",
     communication: "communication", note: "communication", notes: "communication",
 };
-
-const SAMPLE_CSV = [
-    "contactNumber,orgName,address,contactPerson,designation,cellNumber,email,rooms,extra,status,communication",
-    "3238438400,Acme Corp,123 Main St Los Angeles,John Doe,Manager,3238438401,john@acme.com,3BHK,Corner unit,New Lead,Interested in 3BHK units",
-    "3238438402,Beta LLC,456 Oak Ave New York,Jane Smith,Director,3238438403,jane@beta.com,2BHK,,Contacted,Called and left voicemail",
-    "3238438404,Gamma Inc,789 Pine Rd Chicago,Bob Lee,CEO,,,Studio,,New Lead,",
-].join("\n");
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const downloadBlob = (content, name, type = "text/csv") => {
@@ -52,15 +41,6 @@ const downloadBlob = (content, name, type = "text/csv") => {
     const a    = document.createElement("a");
     a.href = url; a.download = name; a.click();
     URL.revokeObjectURL(url);
-};
-
-const normaliseRow = (raw) => {
-    const out = {};
-    for (const k of Object.keys(raw)) {
-        const mapped = FIELD_MAP[k.toLowerCase().replace(/\s+/g, "")];
-        if (mapped) out[mapped] = raw[k]?.trim() || "";
-    }
-    return out;
 };
 
 const validateRow = (row, rowNum) => {
@@ -74,24 +54,22 @@ const validateRow = (row, rowNum) => {
 };
 
 // ─── stages: "idle" | "errors" | "preview" | "uploading" | "done" ─────────────
-const LeadImport = ({ isOpen, onClose, onDone }) => {
+const LeadImport = ({ isOpen, onClose, onDone, customFields = [] }) => {
     const [stage, setStage]         = useState("idle");
     const [file, setFile]           = useState(null);
     const [dragging, setDragging]   = useState(false);
     const [parsing, setParsing]     = useState(false);
 
-    // parsed data
     const [headers, setHeaders]     = useState([]);
     const [validRows, setValidRows] = useState([]);
-    const [rowErrors, setRowErrors] = useState([]);   // ["C29: ...", "C300: ..."]
+    const [rowErrors, setRowErrors] = useState([]);
 
-    // upload progress
     const [uploaded, setUploaded]   = useState(0);
     const [total, setTotal]         = useState(0);
     const [inserted, setInserted]   = useState(0);
     const [skipped, setSkipped]     = useState(0);
     const [aborted, setAborted]     = useState(false);
-    const [speed, setSpeed]         = useState(0);   // rows/sec
+    const [speed, setSpeed]         = useState(0);
     const [msgIdx, setMsgIdx]       = useState(0);
     const abortRef  = useRef(false);
     const startRef  = useRef(0);
@@ -99,7 +77,6 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
 
     const inputRef = useRef(null);
 
-    // rotate fun message every 3 s during upload
     useEffect(() => {
         if (stage !== "uploading") return;
         const id = setInterval(() => setMsgIdx(i => (i + 1) % FUN_MESSAGES.length), 3000);
@@ -116,7 +93,6 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
 
     const handleClose = () => { reset(); onClose(); };
 
-    // ── file pick ──────────────────────────────────────────────────────────────
     const handleFile = (f) => {
         if (!f) return;
         if (!f.name.endsWith(".csv")) return toast.error("Only .csv files are supported");
@@ -130,7 +106,6 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
         handleFile(e.dataTransfer.files[0]);
     };
 
-    // ── parse CSV client-side ──────────────────────────────────────────────────
     const parseFile = (f) => {
         setParsing(true);
         parse(f, {
@@ -142,14 +117,34 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
                 const errors = [];
                 const valid  = [];
 
+                // Build field map with custom fields
+                const fieldMap = { ...BASE_FIELD_MAP };
+                customFields.forEach(cf => {
+                    fieldMap[cf.key.toLowerCase()] = cf.key;
+                    fieldMap[cf.label.toLowerCase().replace(/\s+/g, "")] = cf.key;
+                });
+
                 data.forEach((raw, idx) => {
-                    const rowNum = idx + 2; // +2: 1-based + header row
-                    const row    = normaliseRow(raw);
-                    // clean phone
+                    const rowNum = idx + 2;
+                    const row    = {};
+
+                    // Normalize base fields
+                    for (const k of Object.keys(raw)) {
+                        const mapped = fieldMap[k.toLowerCase().replace(/\s+/g, "")];
+                        if (mapped) row[mapped] = raw[k]?.trim() || "";
+                    }
+
+                    // Clean phone
                     row.contactNumber = (row.contactNumber || "").replace(/\D/g, "").slice(-10);
-                    row.cellNumber    = (row.cellNumber    || "").replace(/\D/g, "").slice(-10);
                     row.email         = (row.email || "").toLowerCase();
                     if (!VALID_STATUSES.includes(row.status)) row.status = "New Lead";
+
+                    // Add custom fields to row
+                    row.customFields = {};
+                    customFields.forEach(cf => {
+                        const val = row[cf.key] || "";
+                        if (val) row.customFields[cf.key] = val;
+                    });
 
                     const errs = validateRow(row, rowNum);
                     if (errs.length) errors.push(...errs);
@@ -167,7 +162,6 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
         });
     };
 
-    // ── upload sequentially ────────────────────────────────────────────────────
     const handleUpload = async () => {
         setStage("uploading");
         setTotal(validRows.length);
@@ -176,7 +170,7 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
         abortRef.current = false; uploadedRef.current = 0;
         startRef.current = Date.now();
 
-        let ins = 0, skp = 0, failedBatches = 0;
+        let ins = 0, skp = 0;
 
         for (let i = 0; i < validRows.length; i += BATCH_SIZE) {
             if (abortRef.current) { setAborted(true); break; }
@@ -198,11 +192,8 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
                 }
             }
 
-            // only count as processed if batch actually reached the server
             if (success) {
                 uploadedRef.current += batch.length;
-            } else {
-                failedBatches++;
             }
 
             const elapsed = (Date.now() - startRef.current) / 1000 || 1;
@@ -210,7 +201,6 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
             setUploaded(uploadedRef.current);
             setInserted(ins);
             setSkipped(skp);
-            setFailedBatches(failedBatches);
         }
 
         if (!abortRef.current) setAborted(false);
@@ -221,8 +211,24 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
 
     const handleAbort = () => { abortRef.current = true; };
 
-    // ── download helpers ───────────────────────────────────────────────────────
-    const downloadSample = () => downloadBlob(SAMPLE_CSV, "leads_sample.csv");
+    const getSampleCSV = () => {
+        const baseCols = ["contactNumber", "orgName", "address", "contactPerson", "email", "status", "communication"];
+        const customCols = customFields.map(f => f.key);
+        const allCols = [...baseCols, ...customCols];
+        
+        const header = allCols.join(",");
+        const sampleRows = [
+            "3238438400,Acme Corp,123 Main St Los Angeles,John Doe,john@acme.com,New Lead,Interested in premium units",
+            "3238438402,Beta LLC,456 Oak Ave New York,Jane Smith,jane@beta.com,Contacted,Called and left voicemail",
+        ].map(row => {
+            const extraCommas = ",".repeat(customCols.length);
+            return row + extraCommas;
+        });
+        
+        return [header, ...sampleRows].join("\n");
+    };
+
+    const downloadSample = () => downloadBlob(getSampleCSV(), "leads_sample.csv");
 
     const downloadErrorLog = () => {
         const ts    = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
@@ -231,11 +237,9 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
     };
 
     const downloadFixedTemplate = () => {
-        // Download only the errored rows pre-filled so user can fix and re-upload
         const errorRowNums = new Set(
             rowErrors.map(e => parseInt(e.match(/^C(\d+)/)?.[1])).filter(Boolean)
         );
-        // re-parse original file to get raw errored rows
         parse(file, {
             header: true, skipEmptyLines: true,
             complete: ({ data, meta }) => {
@@ -249,11 +253,10 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
 
     if (!isOpen) return null;
 
-    // ── DISPLAY COLUMNS for preview — only mapped fields that exist in CSV ─────
-    const DISPLAY_FIELDS = ["contactNumber", "orgName", "address", "contactPerson",
-        "designation", "cellNumber", "email", "rooms", "extra", "status", "communication"];
+    const DISPLAY_FIELDS = ["contactNumber", "orgName", "address", "contactPerson", "email", "status", "communication",
+        ...customFields.map(f => f.key)];
     const previewRows = validRows.slice(0, PREVIEW_ROWS);
-    const previewCols = DISPLAY_FIELDS.filter(f => previewRows.some(r => r[f]));
+    const previewCols = DISPLAY_FIELDS.filter(f => previewRows.some(r => r[f] || r.customFields?.[f]));
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -278,7 +281,7 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
 
                 <div className="overflow-y-auto px-6 py-5 space-y-4 flex-1">
 
-                    {/* ── STAGE: idle ── */}
+                    {/* STAGE: idle */}
                     {stage === "idle" && (
                         <>
                             {/* Column guide */}
@@ -287,9 +290,9 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
                                 <div className="flex flex-wrap gap-1.5">
                                     {[
                                         { col: "contactNumber", req: true }, { col: "orgName", req: true },
-                                        { col: "address" }, { col: "contactPerson" }, { col: "designation" },
-                                        { col: "cellNumber" }, { col: "email" }, { col: "rooms" },
-                                        { col: "extra" }, { col: "status" }, { col: "communication" },
+                                        { col: "address" }, { col: "contactPerson" }, { col: "email" },
+                                        { col: "status" }, { col: "communication" },
+                                        ...customFields.map(f => ({ col: f.key, req: f.required })),
                                     ].map(({ col, req }) => (
                                         <span key={col} className={`text-[10px] px-2 py-0.5 rounded-full font-mono border ${req
                                             ? "bg-blue-50 text-blue-700 border-blue-200"
@@ -330,7 +333,7 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
                         </>
                     )}
 
-                    {/* ── STAGE: errors ── */}
+                    {/* STAGE: errors */}
                     {stage === "errors" && (
                         <div className="space-y-4">
                             <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-100 rounded-xl">
@@ -345,7 +348,6 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
                                 </div>
                             </div>
 
-                            {/* Error list — first 5 inline */}
                             <div className="bg-red-50 border border-red-100 rounded-xl p-3">
                                 <div className="flex items-center justify-between mb-2">
                                     <p className="text-xs font-semibold text-red-600">
@@ -383,7 +385,7 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
                         </div>
                     )}
 
-                    {/* ── STAGE: preview ── */}
+                    {/* STAGE: preview */}
                     {stage === "preview" && (
                         <div className="space-y-4">
                             <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-100 rounded-xl">
@@ -393,7 +395,6 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
                                 </p>
                             </div>
 
-                            {/* Preview table — first 3 rows */}
                             <div>
                                 <div className="flex items-center gap-2 mb-2">
                                     <Eye size={13} className="text-gray-400" />
@@ -415,7 +416,7 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
                                                 <tr key={i} className="hover:bg-gray-50">
                                                     {previewCols.map(col => (
                                                         <td key={col} className="px-3 py-2 text-gray-700 whitespace-nowrap max-w-[160px] truncate">
-                                                            {row[col] || <span className="text-gray-300">—</span>}
+                                                            {row[col] || row.customFields?.[col] || <span className="text-gray-300">—</span>}
                                                         </td>
                                                     ))}
                                                 </tr>
@@ -432,7 +433,7 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
                         </div>
                     )}
 
-                    {/* ── STAGE: uploading ── */}
+                    {/* STAGE: uploading */}
                     {stage === "uploading" && (() => {
                         const pct = total ? (uploaded / total) * 100 : 0;
                         const remaining = speed > 0 ? Math.ceil((total - uploaded) / speed) : null;
@@ -441,12 +442,10 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
                             : "—";
                         return (
                             <div className="space-y-4 py-4">
-                                {/* fun message */}
                                 <p className="text-center text-sm text-blue-500 font-medium animate-pulse min-h-[20px]">
                                     {FUN_MESSAGES[msgIdx]}
                                 </p>
 
-                                {/* big counter */}
                                 <div className="text-center">
                                     <p className="text-3xl font-bold text-blue-600 tabular-nums">
                                         {uploaded.toLocaleString()}
@@ -455,7 +454,6 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
                                     <p className="text-xs text-gray-500 mt-0.5">{pct.toFixed(1)}% complete</p>
                                 </div>
 
-                                {/* animated progress bar */}
                                 <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
                                     <div
                                         className="h-3 rounded-full transition-all duration-500 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"
@@ -463,7 +461,6 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
                                     />
                                 </div>
 
-                                {/* speed + ETA */}
                                 <div className="flex justify-center gap-6 text-xs text-gray-500">
                                     <span>{speed > 0 ? `${speed.toLocaleString()} rows/sec` : "calculating…"}</span>
                                     <span>ETA: {eta}</span>
@@ -487,7 +484,7 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
                         );
                     })()}
 
-                    {/* ── STAGE: done ── */}
+                    {/* STAGE: done */}
                     {stage === "done" && (
                         <div className="space-y-4 py-2">
                             {aborted ? (
@@ -522,7 +519,6 @@ const LeadImport = ({ isOpen, onClose, onDone }) => {
                                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-center">
                                     <p className="text-2xl font-bold text-gray-600 tabular-nums">{uploaded.toLocaleString()}</p>
                                     <p className="text-[10px] text-gray-500 font-medium mt-0.5">Rows uploaded</p>
-
                                 </div>
                             </div>
                         </div>
