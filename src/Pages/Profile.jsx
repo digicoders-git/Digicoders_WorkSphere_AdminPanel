@@ -36,12 +36,6 @@ const Field = ({ label, icon: Icon, children }) => (
     </div>
 );
 
-const TABS = [
-    { key: "personal",   label: "Personal" },
-    { key: "employment", label: "Employment" },
-    { key: "security",   label: "Security" },
-];
-
 const EMPTY = {
     firstName: "", lastName: "", email: "", phone: "", gender: "", address: "",
     dateOfBirth: "", employeeCode: "", joiningDate: "", workShift: "",
@@ -53,6 +47,14 @@ const EMPTY = {
 // ── Component ─────────────────────────────────────────────────────────────────
 const Profile = () => {
     const { user, setUser } = useStore();
+    const isAdmin = ["admin", "super_admin"].includes(user?.role?.name);
+
+    const TABS = [
+        { key: "personal",   label: "Personal" },
+        { key: "employment", label: "Employment" },
+        { key: "security",   label: "Security" },
+    ];
+
     const [form, setForm] = useState(EMPTY);
     const [rawUser, setRawUser] = useState(null);
     const [shifts, setShifts] = useState([]);
@@ -79,15 +81,12 @@ const Profile = () => {
         joiningDate:          u.joiningDate?.split("T")[0] || "",
         workShift:            u.workShift?._id || u.workShift || "",
         workShiftName:        u.workShift?.name || "",
-        // employmentStatus is a populated object {_id, name} — extract name for display, id for edit
         employmentStatus:     u.employmentStatus?._id || u.employmentStatus || "",
         employmentStatusName: u.employmentStatus?.name || "",
         role:                 u.role?.name || "",
         companyId:            u.companyId?.name || "",
-        // department/designation may be ObjectId or populated object
         department:           u.department?.name || (typeof u.department === "string" ? u.department : ""),
         designation:          u.designation?.name || (typeof u.designation === "string" ? u.designation : ""),
-        // reportingTo is a populated object — extract display name
         reportingTo:          u.reportingTo?._id || u.reportingTo || "",
         reportingToName:      u.reportingTo ? `${u.reportingTo.firstName || ""} ${u.reportingTo.lastName || ""}`.trim() : "",
         profilePic:           null,
@@ -157,13 +156,11 @@ const Profile = () => {
         setSaving(true);
         try {
             const fd = new FormData();
-            // Text fields only — skip read-only, internal, and file fields
             const textFields = ["firstName", "lastName", "phone", "gender", "address", "dateOfBirth",
                 "employeeCode", "joiningDate", "workShift", "employmentStatus", "password"];
             textFields.forEach(k => {
                 if (form[k] !== null && form[k] !== "") fd.append(k, form[k]);
             });
-            // File field — only append if a new file was selected
             if (form.profilePic instanceof File) {
                 fd.append("profilePic", form.profilePic);
             }
@@ -172,7 +169,6 @@ const Profile = () => {
                 toast.success("Profile updated successfully");
                 setEditMode(false);
                 const updated = await getProfile();
-                // Merge updated user with existing user to preserve permissions
                 const mergedUser = { ...user, ...updated.user };
                 setUser(mergedUser);
                 const mapped = mapUser(updated.user);
@@ -225,7 +221,7 @@ const Profile = () => {
                                     ? <img src={preview} alt="avatar" className="w-full h-full object-cover" />
                                     : <span className="text-3xl font-bold text-blue-600">{initials}</span>}
                             </div>
-                            {editMode && (
+                            {isAdmin && editMode && (
                                 <label className="absolute -bottom-1 -right-1 w-8 h-8 bg-blue-600 hover:bg-blue-700 rounded-full flex items-center justify-center cursor-pointer shadow-lg transition">
                                     <Camera size={14} className="text-white" />
                                     <input type="file" name="profilePic" accept="image/*" onChange={handleChange} className="hidden" />
@@ -239,23 +235,25 @@ const Profile = () => {
                                 <h1 className="text-xl font-bold text-gray-900">{form.firstName} {form.lastName}</h1>
                                 <p className="text-sm text-gray-500">{form.role}{form.companyId ? ` · ${form.companyId}` : ""}</p>
                             </div>
-                            {!editMode ? (
-                                <button onClick={() => setEditMode(true)}
-                                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition shadow-sm">
-                                    <Pencil size={14} /> Edit Profile
-                                </button>
-                            ) : (
-                                <div className="flex gap-2">
-                                    <button onClick={handleCancel}
-                                        className="flex items-center gap-2 px-4 py-2 border border-gray-200 bg-white hover:bg-gray-50 rounded-xl text-sm transition">
-                                        <X size={14} /> Cancel
+                            {/* {isAdmin && (
+                                !editMode ? (
+                                    <button onClick={() => setEditMode(true)}
+                                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition shadow-sm">
+                                        <Pencil size={14} /> Edit Profile
                                     </button>
-                                    <button onClick={handleSave} disabled={saving}
-                                        className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-medium transition disabled:opacity-60">
-                                        <Check size={14} /> {saving ? "Saving..." : "Save Changes"}
-                                    </button>
-                                </div>
-                            )}
+                                ) : (
+                                    <div className="flex gap-2">
+                                        <button onClick={handleCancel}
+                                            className="flex items-center gap-2 px-4 py-2 border border-gray-200 bg-white hover:bg-gray-50 rounded-xl text-sm transition">
+                                            <X size={14} /> Cancel
+                                        </button>
+                                        <button onClick={handleSave} disabled={saving}
+                                            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-medium transition disabled:opacity-60">
+                                            <Check size={14} /> {saving ? "Saving..." : "Save Changes"}
+                                        </button>
+                                    </div>
+                                )
+                            )} */}
                         </div>
                     </div>
                 </div>
@@ -297,7 +295,7 @@ const Profile = () => {
 
                     {/* ── Personal ── */}
                     {tab === "personal" && (
-                        editMode ? (
+                        isAdmin && editMode ? (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                                 <Field label="First Name" icon={User}>
                                     <input name="firstName" value={form.firstName} onChange={handleChange} placeholder="John" />
@@ -341,7 +339,7 @@ const Profile = () => {
 
                     {/* ── Employment ── */}
                     {tab === "employment" && (
-                        editMode ? (
+                        isAdmin && editMode ? (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                                 <Field label="Employee Code" icon={Briefcase}>
                                     <input name="employeeCode" value={form.employeeCode} onChange={handleChange} placeholder="EMP-001" />
@@ -381,11 +379,9 @@ const Profile = () => {
                     {/* ── Security ── */}
                     {tab === "security" && (
                         <div className="max-w-md space-y-6">
-                            {/* Change Password Card */}
                             <div>
                                 <h3 className="text-sm font-semibold text-gray-700 mb-4">Change Password</h3>
                                 <form onSubmit={handleChangePassword} className="space-y-4">
-                                    {/* Current Password */}
                                     <div>
                                         <label className={labelCls}>Current Password</label>
                                         <div className="relative">
@@ -404,7 +400,6 @@ const Profile = () => {
                                         </div>
                                     </div>
 
-                                    {/* New Password */}
                                     <div>
                                         <label className={labelCls}>New Password</label>
                                         <div className="relative">
@@ -423,7 +418,6 @@ const Profile = () => {
                                         </div>
                                     </div>
 
-                                    {/* Confirm New Password */}
                                     <div>
                                         <label className={labelCls}>Confirm New Password</label>
                                         <div className="relative">
@@ -455,7 +449,6 @@ const Profile = () => {
                                 </form>
                             </div>
 
-                            {/* Info note */}
                             <div className="flex items-start gap-3 p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-xs text-yellow-700">
                                 <Lock size={14} className="shrink-0 mt-0.5" />
                                 <span>After changing your password you'll stay logged in. For security, log out and back in on other devices.</span>
