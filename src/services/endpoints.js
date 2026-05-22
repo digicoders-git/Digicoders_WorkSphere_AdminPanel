@@ -197,4 +197,29 @@ export const ENDPOINTS = {
     IMPORT_BATCH: `/api/leads/import/batch`,
     FIELD_CONFIG: `/api/leads/field-config`,
   },
+
+  QUOTE: {
+    CREATE: `/api/quotes`,
+    GET_BY_LEAD: (leadId) => `/api/quotes/lead/${leadId}`,
+    GET_BY_ID: (quoteId) => `/api/quotes/${quoteId}`,
+    GET_HTML: (quoteId) => `/api/quotes/${quoteId}/html`,
+    SEND: (quoteId) => `/api/quotes/${quoteId}/send`,
+    SEND_DEFAULTS: (quoteId) => `/api/quotes/${quoteId}/send-defaults`,
+    FOLLOW_UP: (quoteId) => `/api/quotes/${quoteId}/follow-ups`,
+    FOLLOW_UP_UPDATE: (quoteId, followUpId) => `/api/quotes/${quoteId}/follow-ups/${followUpId}`,
+    UPDATE: (quoteId) => `/api/quotes/${quoteId}`,
+    DELETE: (quoteId) => `/api/quotes/${quoteId}`,
+  },
+
+  QUOTE_PROFILE: {
+    LIST: `/api/quote-profiles`,
+    DEFAULTS: `/api/quote-profiles/defaults`,
+    LIST_ADMIN: `/api/quote-profiles/admin`,
+    HISTORY: (id) => `/api/quote-profiles/${id}/history`,
+    CREATE: `/api/quote-profiles`,
+    UPDATE: (id) => `/api/quote-profiles/${id}`,
+    DELETE: (id) => `/api/quote-profiles/${id}`,
+    LOGO: (id) => `/api/quote-profiles/${id}/logo`,
+    PAYMENT_QR: (id) => `/api/quote-profiles/${id}/payment-qr`,
+  },
 };

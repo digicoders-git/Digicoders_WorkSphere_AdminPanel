@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { Plus, X, Pencil, Trash2, Eye, User, Send, MessageSquare, ChevronLeft, ChevronRight, Upload, Settings } from "lucide-react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { Plus, X, Pencil, Trash2, Eye, User, Send, MessageSquare, ChevronLeft, ChevronRight, Upload, Settings, FileText } from "lucide-react";
 import { toast } from "react-toastify";
 import { useStore } from "../../../context/StoreContext";
 import { fetchUsers } from "../../employee/services/UserService.jsx";
@@ -8,6 +8,9 @@ import LeadCommunication from "../components/LeadCommunication.jsx";
 import LeadHistory from "../components/LeadHistory.jsx";
 import LeadImport from "../components/LeadImport.jsx";
 import LeadFieldManager from "../components/LeadFieldManager.jsx";
+import QuoteForm from "../components/QuoteForm.jsx";
+import QuotePreview from "../components/QuotePreview.jsx";
+import QuoteProfileManager from "../components/QuoteProfileManager.jsx";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const fmtUS = (raw = "") => {
@@ -36,6 +39,67 @@ const STATUS_COLORS = {
 };
 
 const inp = "w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
+
+const customFieldsToObject = (customFields) => {
+    if (!customFields) return {};
+    if (typeof customFields.get === "function") {
+        return Object.fromEntries(customFields.entries());
+    }
+    if (typeof customFields === "object") return { ...customFields };
+    return {};
+};
+
+const formDataFromLead = (lead, customFields) => {
+    const stored = customFieldsToObject(lead.customFields);
+    const formData = {
+        contactNumber: fmtUS(lead.contactNumber || ""),
+        orgName: lead.orgName || "",
+        address: lead.address || "",
+        contactPerson: lead.contactPerson || "",
+        email: lead.email || "",
+        status: lead.status || "New Lead",
+        assignedTo: lead.assignedTo?._id || lead.assignedTo || "",
+    };
+    customFields.forEach((f) => {
+        formData[f.key] = stored[f.key] ?? "";
+    });
+    return formData;
+};
+
+const mergeLeadRefresh = (prev, next) => {
+    if (!next) return prev;
+    return {
+        ...prev,
+        ...next,
+        communications: next.communications ?? prev?.communications ?? [],
+        history: next.history ?? prev?.history ?? [],
+        customFields: next.customFields ?? prev?.customFields,
+    };
+};
+
+const leadSnapshotFromForm = (form, base, users, customFields) => {
+    const assignedUser = users.find((u) => u._id === form.assignedTo);
+    const baseCustom = customFieldsToObject(base.customFields);
+    const customFieldsMerged = { ...baseCustom };
+    customFields.forEach((f) => {
+        if (Object.prototype.hasOwnProperty.call(form, f.key)) {
+            customFieldsMerged[f.key] = form[f.key] ?? "";
+        }
+    });
+    return {
+        ...base,
+        contactNumber: digits(form.contactNumber) || base.contactNumber,
+        orgName: form.orgName?.trim() || base.orgName,
+        address: form.address ?? base.address,
+        contactPerson: form.contactPerson ?? base.contactPerson,
+        email: form.email ?? base.email,
+        status: form.status || base.status,
+        assignedTo: assignedUser
+            ? { _id: assignedUser._id, firstName: assignedUser.firstName, lastName: assignedUser.lastName }
+            : form.assignedTo || base.assignedTo,
+        customFields: customFieldsMerged,
+    };
+};
 
 // ─── Inline communication form for new lead ───────────────────────────────────
 const NewLeadCommForm = ({ comm, onChange }) => (
@@ -80,6 +144,9 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
     const [matchedLead, setMatchedLead] = useState(null);
     const [fullLead, setFullLead] = useState(null);
     const [newComm, setNewComm] = useState({ subject: "", description: "" });
+    const [rightTabActive, setRightTabActive] = useState("communication"); // communication | quotes
+    const [selectedQuotePreview, setSelectedQuotePreview] = useState(null);
+    const [quoteToEdit, setQuoteToEdit] = useState(null);
     const debounceRef = useRef(null);
 
     useEffect(() => {
@@ -98,22 +165,7 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
                 .then(r => {
                     const lead = r.lead || null;
                     setFullLead(lead);
-                    if (lead) {
-                        const formData = {
-                            contactNumber: fmtUS(lead.contactNumber || ""),
-                            orgName:       lead.orgName || "",
-                            address:       lead.address || "",
-                            contactPerson: lead.contactPerson || "",
-                            email:         lead.email || "",
-                            status:        lead.status || "New Lead",
-                            assignedTo:    lead.assignedTo?._id || lead.assignedTo || "",
-                        };
-                        // Add custom fields
-                        customFields.forEach(f => {
-                            formData[f.key] = lead.customFields?.get?.(f.key) || lead.customFields?.[f.key] || "";
-                        });
-                        setForm(formData);
-                    }
+                    if (lead) setForm(formDataFromLead(lead, customFields));
                 })
                 .catch(() => {});
         } else {
@@ -144,17 +196,13 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
             const match = leads.find(l => digits(l.contactNumber || "") === d);
             if (match) {
                 setMatchedLead(match);
-                const formData = {
-                    contactNumber: fmtUS(match.contactNumber || ""),
-                    orgName:       match.orgName || "",
-                    address:       match.address || "",
-                    contactPerson: match.contactPerson || "",
-                    email:         match.email || "",
-                    status:        match.status || "New Lead",
-                    assignedTo:    match.assignedTo?._id || match.assignedTo || "",
-                };
-                setForm(formData);
-                getLeadById(match._id).then(r => setFullLead(r.lead || null)).catch(() => {});
+                getLeadById(match._id)
+                    .then((r) => {
+                        const lead = r.lead || null;
+                        setFullLead(lead);
+                        if (lead) setForm(formDataFromLead(lead, customFields));
+                    })
+                    .catch(() => {});
                 toast.info("Existing lead found — will update on save");
             } else {
                 setMatchedLead(null);
@@ -163,22 +211,32 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
         } catch { /* silent */ } finally { setLookupLoading(false); }
     };
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         if (!digits(form.contactNumber)) return toast.error("Contact number is required");
         if (!form.orgName.trim()) return toast.error("Organisation name is required");
-        
+
         const payload = {
             contactNumber: digits(form.contactNumber),
-            orgName:       form.orgName.trim(),
-            address:       form.address,
+            orgName: form.orgName.trim(),
+            address: form.address,
             contactPerson: form.contactPerson,
-            email:         form.email,
-            status:        form.status,
-            assignedTo:    form.assignedTo || null,
-            customFields:  {},
+            email: form.email,
+            status: form.status,
+            assignedTo: form.assignedTo || null,
+            customFields: {},
         };
-        customFields.forEach(f => { payload.customFields[f.key] = form[f.key] || ""; });
-        onSubmit(payload, matchedLead?._id || null, newComm);
+        customFields.forEach((f) => {
+            if (Object.prototype.hasOwnProperty.call(form, f.key)) {
+                payload.customFields[f.key] = form[f.key] ?? "";
+            }
+        });
+
+        const result = await onSubmit(payload, matchedLead?._id || null, newComm);
+        if (result?.updated && result.lead) {
+            setFullLead((prev) => mergeLeadRefresh(prev, result.lead));
+            setForm(formDataFromLead(result.lead, customFields));
+            onLeadUpdate?.(result.lead);
+        }
     };
 
     const handleCommAdded = useCallback((comm) => {
@@ -189,14 +247,21 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
         onLeadUpdate?.();
     }, [onLeadUpdate]);
 
-    if (!isOpen) return null;
-
     const isEdit = !!initial;
     const isExisting = isEdit || !!matchedLead;
     const activeLead = fullLead || initial || matchedLead;
     const communications = fullLead?.communications || [];
     const history = fullLead?.history || [];
     const activeLeadId = initial?._id || matchedLead?._id;
+
+    /** Live lead for quote preview — reflects form while editing, saved lead after update */
+    const quoteLead = useMemo(() => {
+        if (!isOpen || !isExisting || !activeLead) return null;
+        if (viewMode) return activeLead;
+        return leadSnapshotFromForm(form, activeLead, users, customFields);
+    }, [isOpen, isExisting, activeLead, viewMode, form, users, customFields]);
+
+    if (!isOpen) return null;
 
     // Render custom field based on type
     const renderCustomField = (field, isViewMode = false) => {
@@ -383,18 +448,86 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
                     </div>
 
                     {/* RIGHT */}
-                    <div className="flex flex-col w-full lg:w-1/2 overflow-y-auto border-t lg:border-t-0">
+                    <div className="flex flex-col w-full lg:w-1/2 overflow-hidden border-t lg:border-t-0">
                         {isExisting ? (
                             <>
-                                <div className="px-6 py-5 border-b">
-                                    <LeadCommunication
-                                        leadId={activeLeadId}
-                                        communications={communications}
-                                        onAdded={handleCommAdded}
-                                    />
+                                {/* Tabs */}
+                                <div className="px-6 pt-5 border-b flex gap-4 overflow-x-auto">
+                                    <button
+                                        onClick={() => setRightTabActive("communication")}
+                                        className={`pb-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                                            rightTabActive === "communication"
+                                                ? "border-blue-600 text-blue-600"
+                                                : "border-transparent text-gray-600 hover:text-gray-900"
+                                        }`}
+                                    >
+                                        Communication
+                                    </button>
+                                    <button
+                                        onClick={() => setRightTabActive("quotes")}
+                                        className={`pb-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors flex items-center gap-1 ${
+                                            rightTabActive === "quotes"
+                                                ? "border-blue-600 text-blue-600"
+                                                : "border-transparent text-gray-600 hover:text-gray-900"
+                                        }`}
+                                    >
+                                        <FileText size={14} /> Quotes
+                                    </button>
+                                    <button
+                                        onClick={() => setRightTabActive("history")}
+                                        className={`pb-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                                            rightTabActive === "history"
+                                                ? "border-blue-600 text-blue-600"
+                                                : "border-transparent text-gray-600 hover:text-gray-900"
+                                        }`}
+                                    >
+                                        History
+                                    </button>
                                 </div>
-                                <div className="px-6 py-5">
-                                    <LeadHistory history={history} users={users} />
+
+                                {/* Tab Content */}
+                                <div className="flex-1 overflow-y-auto">
+                                    {rightTabActive === "communication" && (
+                                        <>
+                                            <div className="px-6 py-5 border-b">
+                                                <LeadCommunication
+                                                    leadId={activeLeadId}
+                                                    communications={communications}
+                                                    onAdded={handleCommAdded}
+                                                />
+                                            </div>
+                                        </>
+                                    )}
+                                    {rightTabActive === "quotes" && (
+                                        <div className="px-6 py-5 min-h-[400px]">
+                                            {!selectedQuotePreview ? (
+                                                <QuoteForm
+                                                    leadId={activeLeadId}
+                                                    lead={quoteLead}
+                                                    companyId={quoteLead?.companyId?._id || quoteLead?.companyId || fullLead?.companyId?._id || fullLead?.companyId}
+                                                    onOpenPreview={(q) => setSelectedQuotePreview(q)}
+                                                    editQuote={quoteToEdit}
+                                                    onEditConsumed={() => setQuoteToEdit(null)}
+                                                />
+                                            ) : (
+                                                <QuotePreview
+                                                    quote={selectedQuotePreview}
+                                                    lead={quoteLead}
+                                                    onClose={() => setSelectedQuotePreview(null)}
+                                                    onUpdated={(q) => setSelectedQuotePreview(q)}
+                                                    onEditDraft={(q) => {
+                                                        setSelectedQuotePreview(null);
+                                                        setQuoteToEdit(q);
+                                                    }}
+                                                />
+                                            )}
+                                        </div>
+                                    )}
+                                    {rightTabActive === "history" && (
+                                        <div className="px-6 py-5">
+                                            <LeadHistory history={history} users={users} />
+                                        </div>
+                                    )}
                                 </div>
                             </>
                         ) : (
@@ -454,6 +587,7 @@ const Leads = () => {
     const [selected, setSelected] = useState(null);
     const [customFields, setCustomFields] = useState([]);
     const [fieldManagerOpen, setFieldManagerOpen] = useState(false);
+    const [quoteProfileManagerOpen, setQuoteProfileManagerOpen] = useState(false);
     const [filterStatus, setFilterStatus] = useState("");
     const [filterAssignedTo, setFilterAssignedTo] = useState("");
     const searchDebounce          = useRef(null);
@@ -506,23 +640,31 @@ const Leads = () => {
             const existingId = selected?._id || matchedId;
             if (existingId) {
                 await updateLead(existingId, form);
+                const refreshed = await getLeadById(existingId);
+                const lead = refreshed.lead;
+                if (lead) setSelected(lead);
                 toast.success("Lead updated");
-            } else {
-                const res = await createLead(form);
-                const createdId = res.lead?._id;
-                if (createdId && newComm?.description?.trim()) {
-                    await addCommunication(createdId, {
-                        subject:     newComm.subject?.trim() || "Note",
-                        description: newComm.description.trim(),
-                    });
-                }
-                toast.success("Lead created");
+                load(page, search, filterStatus, filterAssignedTo);
+                return { updated: true, lead };
             }
+            const res = await createLead(form);
+            const createdId = res.lead?._id;
+            if (createdId && newComm?.description?.trim()) {
+                await addCommunication(createdId, {
+                    subject: newComm.subject?.trim() || "Note",
+                    description: newComm.description.trim(),
+                });
+            }
+            toast.success("Lead created");
             close();
             load(page, search, filterStatus, filterAssignedTo);
+            return { created: true };
         } catch (err) {
             toast.error(err?.response?.data?.message || "Failed to save lead");
-        } finally { setSaving(false); }
+            return null;
+        } finally {
+            setSaving(false);
+        }
     };
 
     const handleDelete = async (id) => {
@@ -557,6 +699,14 @@ const Leads = () => {
                             <button onClick={() => setFieldManagerOpen(true)}
                                 className="flex items-center gap-1.5 px-4 py-2 bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">
                                 <Settings size={15} /> Manage Fields
+                            </button>
+                        )}
+                        {isAdmin && (
+                            <button
+                                onClick={() => setQuoteProfileManagerOpen(true)}
+                                className="flex items-center gap-1.5 px-4 py-2 bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium transition"
+                            >
+                                <FileText size={15} /> Quote Profiles
                             </button>
                         )}
                         {canWrite && (
@@ -680,7 +830,10 @@ const Leads = () => {
                 saving={saving}
                 users={users}
                 currentUserId={user?._id}
-                onLeadUpdate={() => load(page, search, filterStatus, filterAssignedTo)}
+                onLeadUpdate={(lead) => {
+                    if (lead) setSelected(lead);
+                    load(page, search, filterStatus, filterAssignedTo);
+                }}
                 customFields={customFields}
             />
 
@@ -691,6 +844,12 @@ const Leads = () => {
                     getFieldConfig().then(r => setCustomFields(r.fields || [])).catch(() => {});
                     load(page, search, filterStatus, filterAssignedTo);
                 }}
+            />
+
+            <QuoteProfileManager
+                isOpen={quoteProfileManagerOpen}
+                onClose={() => setQuoteProfileManagerOpen(false)}
+                onSave={() => {}}
             />
 
             <LeadImport

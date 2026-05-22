@@ -93,7 +93,7 @@ const Home = () => {
         const load = async () => {
             const results = await Promise.allSettled([
                 canSee(["VIEW_USER", "VIEW_ALL_USERS"]) ? fetchUsers() : Promise.resolve(null),
-                canSee(["VIEW_COMPANY", "VIEW_ALL_COMPANIES"]) ? fetchAllCompaniesList() : Promise.resolve(null),
+                isSuperAdmin ? fetchAllCompaniesList() : Promise.resolve(null),
                 canSee(["VIEW_DEPARTMENT", "VIEW_ALL_DEPARTMENTS"]) ? getAllCompanyDepartments() : Promise.resolve(null),
             ]);
             setStats({
@@ -169,7 +169,7 @@ const Home = () => {
                 {canSee(["VIEW_USER", "VIEW_ALL_USERS"]) && (
                     <StatCard icon={Users} label="Employees" value={stats.users} sub="Total registered" color="bg-blue-50 text-blue-600" to="/users" />
                 )}
-                {canSee(["VIEW_COMPANY", "VIEW_ALL_COMPANIES"]) && (
+                {isSuperAdmin && (
                     <StatCard icon={Building2} label="Companies" value={stats.companies} sub="Active organizations" color="bg-purple-50 text-purple-600" to="/companies" />
                 )}
                 {canSee(["VIEW_DEPARTMENT", "VIEW_ALL_DEPARTMENTS"]) && (
@@ -351,12 +351,12 @@ const Home = () => {
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                         {[
                             { label: "Employees",   icon: Users,        path: "/users",          color: "bg-blue-50 text-blue-600",   perms: ["VIEW_USER","VIEW_ALL_USERS"] },
-                            { label: "Companies",   icon: Building2,    path: "/companies",      color: "bg-purple-50 text-purple-600", perms: ["VIEW_COMPANY","VIEW_ALL_COMPANIES"] },
+                            { label: "Companies",   icon: Building2,    path: "/companies",      color: "bg-purple-50 text-purple-600", superAdminOnly: true },
                             { label: "Departments", icon: FolderKanban, path: "/departments",    color: "bg-green-50 text-green-600",  perms: ["VIEW_DEPARTMENT","VIEW_ALL_DEPARTMENTS"] },
                             { label: "Roles",       icon: ShieldCheck,  path: "/settings/roles", color: "bg-orange-50 text-orange-600", perms: ["VIEW_ROLE","VIEW_ALL_ROLES"] },
                             { label: "Attendance",  icon: Calendar,     path: "/attendance",     color: "bg-cyan-50 text-cyan-600",    perms: [] },
                             { label: "Work Shifts", icon: Clock,        path: "/work-shifts",    color: "bg-indigo-50 text-indigo-600", perms: [] },
-                        ].filter(c => canSee(c.perms)).map(c => (
+                        ].filter(c => c.superAdminOnly ? isSuperAdmin : canSee(c.perms)).map(c => (
                             <Link key={c.path} to={c.path} className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col items-center gap-2 hover:shadow-md hover:border-blue-200 transition group">
                                 <div className={`p-2.5 rounded-xl ${c.color}`}><c.icon size={18} /></div>
                                 <span className="text-xs font-medium text-gray-600 group-hover:text-blue-600 transition">{c.label}</span>

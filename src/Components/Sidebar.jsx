@@ -16,7 +16,7 @@ const NAV = [
     {
         group: "Organization",
         items: [
-            { name: "Companies",   icon: Building2,    path: "/companies",      permissions: ["VIEW_COMPANY", "VIEW_ALL_COMPANIES"] },
+            { name: "Companies",   icon: Building2,    path: "/companies",      superAdminOnly: true },
             { name: "Departments", icon: FolderKanban, path: "/departments",    permissions: ["VIEW_DEPARTMENT", "VIEW_ALL_DEPARTMENTS"] },
             { name: "Roles",       icon: ShieldCheck,  path: "/settings/roles", permissions: ["VIEW_ROLE", "VIEW_ALL_ROLES"] },
             { name: "Employees",   icon: Users,        path: "/users",          permissions: ["VIEW_USER", "VIEW_ALL_USERS"] },
@@ -61,7 +61,11 @@ const Sidebar = ({ mobileOpen, setMobileOpen }) => {
     }, []);
 
     const isSuperAdmin = user?.role?.name === "super_admin";
-    const canSee = (perms) => isSuperAdmin || !perms.length || perms.some(p => permissions.includes(p));
+    const canSeeItem = (item) => {
+        if (item.superAdminOnly) return isSuperAdmin;
+        const perms = item.permissions || [];
+        return isSuperAdmin || !perms.length || perms.some(p => permissions.includes(p));
+    };
     const initials = `${user?.firstName?.[0] || ""}${user?.lastName?.[0] || ""}`.toUpperCase();
     const close = () => setMobileOpen(false);
 
@@ -112,7 +116,7 @@ const Sidebar = ({ mobileOpen, setMobileOpen }) => {
                 {/* Nav */}
                 <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-5 no-scrollbar">
                     {NAV.map(section => {
-                        const visible = section.items.filter(i => canSee(i.permissions));
+                        const visible = section.items.filter(canSeeItem);
                         if (!visible.length) return null;
                         return (
                             <div key={section.group}>

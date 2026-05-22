@@ -194,7 +194,7 @@ const QUICK_LINKS = [
         path: "/settings/companies",
         icon: Building2,
         color: "bg-blue-50 text-blue-600",
-        perms: ["VIEW_COMPANY", "VIEW_ALL_COMPANIES"],
+        superAdminOnly: true,
     },
 ];
 
@@ -236,7 +236,7 @@ const Settings = () => {
 
             {tab === "links" && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {QUICK_LINKS.filter(o => canSee(o.perms)).map(opt => (
+                    {QUICK_LINKS.filter(o => o.superAdminOnly ? isSuperAdmin : canSee(o.perms)).map(opt => (
                         <Link key={opt.path} to={opt.path}
                             className="bg-white border border-gray-200 rounded-xl p-6 hover:shadow-md hover:border-blue-200 transition group flex flex-col gap-4">
                             <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${opt.color}`}>
