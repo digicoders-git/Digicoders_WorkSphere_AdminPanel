@@ -16,7 +16,18 @@ export const createQuoteProfile = (data) => api.post(P.CREATE, data).then((r) =>
 
 export const updateQuoteProfile = (id, data) => api.patch(P.UPDATE(id), data).then((r) => r.data.profile);
 
-export const deleteQuoteProfile = (id) => api.delete(P.DELETE(id)).then((r) => r.data);
+export const deleteQuoteProfile = (id) => 
+    api.delete(P.DELETE(id)).then((r) => {
+        if (!r.data.success) {
+            throw new Error(r.data.message || "Failed to delete profile");
+        }
+        return r.data;
+    }).catch((err) => {
+        if (err.response?.data?.message) {
+            throw err;
+        }
+        throw new Error(err.message || "Failed to delete profile");
+    });
 
 export const uploadQuoteProfileLogo = (id, file) => {
     const fd = new FormData();

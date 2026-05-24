@@ -200,6 +200,7 @@ export const ENDPOINTS = {
 
   QUOTE: {
     CREATE: `/api/quotes`,
+    GET_ALL: `/api/quotes`,
     GET_BY_LEAD: (leadId) => `/api/quotes/lead/${leadId}`,
     GET_BY_ID: (quoteId) => `/api/quotes/${quoteId}`,
     GET_HTML: (quoteId) => `/api/quotes/${quoteId}/html`,

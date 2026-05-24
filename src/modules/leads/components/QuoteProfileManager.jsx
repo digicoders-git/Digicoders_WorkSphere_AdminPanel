@@ -55,6 +55,7 @@ export default function QuoteProfileManager({ isOpen, onClose, onSave }) {
     const [historyOpen, setHistoryOpen] = useState(null);
     const [history, setHistory] = useState([]);
     const [historyLoading, setHistoryLoading] = useState(false);
+    const [showDeleted, setShowDeleted] = useState(false);
     const logoRef = useRef(null);
     const qrRef = useRef(null);
 
@@ -157,8 +158,9 @@ export default function QuoteProfileManager({ isOpen, onClose, onSave }) {
     const handleDelete = async (p) => {
         if (!window.confirm(`Delete profile "${p.name}"? Quotes using it will fall back to the default profile.`)) return;
         try {
+            setSaving(true);
             await deleteQuoteProfile(p._id);
-            toast.success("Profile deleted");
+            toast.success("Profile deleted successfully");
             if (editing === p._id) {
                 setEditing(null);
                 setForm(emptyProfile());
@@ -166,7 +168,11 @@ export default function QuoteProfileManager({ isOpen, onClose, onSave }) {
             await load();
             onSave?.();
         } catch (e) {
-            toast.error(e.response?.data?.message || "Failed to delete");
+            const errorMsg = e?.response?.data?.message || e?.message || "Failed to delete profile";
+            toast.error(errorMsg);
+            console.error("Delete profile error:", e);
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -215,6 +221,10 @@ export default function QuoteProfileManager({ isOpen, onClose, onSave }) {
 
     const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
+    const filteredProfiles = showDeleted ? profiles : profiles.filter(p => !p.isDeleted);
+    const activeCount = profiles.filter(p => !p.isDeleted).length;
+    const deletedCount = profiles.filter(p => p.isDeleted).length;
+
     if (!isOpen) return null;
 
     return (
@@ -234,7 +244,23 @@ export default function QuoteProfileManager({ isOpen, onClose, onSave }) {
                 <div className="flex-1 overflow-hidden flex flex-col lg:flex-row min-h-0">
                     <div className="lg:w-2/5 border-b lg:border-b-0 lg:border-r flex flex-col min-h-0">
                         <div className="p-3 border-b flex flex-wrap justify-between items-center gap-2 shrink-0">
-                            <p className="text-xs font-semibold text-gray-600 uppercase">Profiles</p>
+                            <div className="flex items-center gap-2">
+                                <p className="text-xs font-semibold text-gray-600 uppercase">Profiles ({activeCount})</p>
+                                {deletedCount > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowDeleted(!showDeleted)}
+                                        className={`text-[10px] px-2 py-1 rounded-md font-medium transition ${
+                                            showDeleted
+                                                ? "bg-red-100 text-red-700 border border-red-300"
+                                                : "bg-gray-100 text-gray-600 border border-gray-300"
+                                        }`}
+                                        title={`${deletedCount} deleted profile(s) available`}
+                                    >
+                                        {showDeleted ? `Hide deleted (${deletedCount})` : `Show deleted (${deletedCount})`}
+                                    </button>
+                                )}
+                            </div>
                             <div className="flex gap-1">
                                 <button
                                     type="button"
@@ -256,17 +282,19 @@ export default function QuoteProfileManager({ isOpen, onClose, onSave }) {
                         <div className="flex-1 overflow-y-auto p-2 space-y-1">
                             {loading ? (
                                 <p className="text-center text-sm text-gray-500 py-8">Loading…</p>
-                            ) : profiles.length === 0 ? (
-                                <p className="text-center text-sm text-gray-500 py-8">No profiles yet</p>
+                            ) : filteredProfiles.length === 0 ? (
+                                <p className="text-center text-sm text-gray-500 py-8">
+                                    {showDeleted ? "No deleted profiles" : "No active profiles"}
+                                </p>
                             ) : (
-                                profiles.map((p) => (
+                                filteredProfiles.map((p) => (
                                     <div
                                         key={p._id}
                                         className={`p-3 rounded-lg border text-sm ${
                                             editing === p._id
                                                 ? "border-blue-400 bg-blue-50"
                                                 : p.isDeleted
-                                                  ? "border-gray-200 bg-gray-50 opacity-60"
+                                                  ? "border-red-200 bg-red-50"
                                                   : "border-gray-200 hover:bg-gray-50"
                                         }`}
                                     >
@@ -303,7 +331,8 @@ export default function QuoteProfileManager({ isOpen, onClose, onSave }) {
                                                 <button
                                                     type="button"
                                                     onClick={() => startEdit(p)}
-                                                    className="p-1.5 rounded hover:bg-white text-blue-600"
+                                                    disabled={saving}
+                                                    className="p-1.5 rounded hover:bg-white text-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     title="Edit"
                                                 >
                                                     <Pencil size={12} />
@@ -311,7 +340,8 @@ export default function QuoteProfileManager({ isOpen, onClose, onSave }) {
                                                 <button
                                                     type="button"
                                                     onClick={() => openHistory(p)}
-                                                    className="p-1.5 rounded hover:bg-white text-gray-600"
+                                                    disabled={saving}
+                                                    className="p-1.5 rounded hover:bg-white text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     title="History"
                                                 >
                                                     <History size={12} />
@@ -319,7 +349,8 @@ export default function QuoteProfileManager({ isOpen, onClose, onSave }) {
                                                 <button
                                                     type="button"
                                                     onClick={() => handleDelete(p)}
-                                                    className="p-1.5 rounded hover:bg-white text-red-600"
+                                                    disabled={saving}
+                                                    className="p-1.5 rounded hover:bg-white text-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
                                                     title="Delete"
                                                 >
                                                     <Trash2 size={12} />

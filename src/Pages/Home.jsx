@@ -3,8 +3,8 @@ import { useStore } from "../context/StoreContext";
 import { Link } from "react-router-dom";
 import {
     Users, Building2, FolderKanban, ShieldCheck, Clock,
-    LogIn, LogOut, CheckCircle, AlertCircle, TrendingUp,
-    ArrowRight, Calendar, Timer, MapPin
+    LogIn, LogOut, CheckCircle, TrendingUp, Receipt, CreditCard,
+    ArrowRight, Calendar, Timer, MapPin, IndianRupee, FileText,
 } from "lucide-react";
 import { fetchUsers } from "../modules/employee/services/UserService";
 import { fetchAllCompaniesList } from "../modules/company/services/companyService";
@@ -12,6 +12,8 @@ import { getAllCompanyDepartments } from "../modules/department/services/departm
 import { getTodayAttendance, getAttendanceSummary, getCompanyAttendance } from "../modules/attendance/services/attendanceService";
 import { checkIn, checkOut } from "../modules/attendance/services/attendanceService";
 import { getMyTaskHistory } from "../modules/projects/services/projectService";
+import { getLeads } from "../modules/leads/services/leadService";
+import { getAllQuotes } from "../modules/leads/services/quoteService";
 import { toast } from "react-toastify";
 
 const currentMonth = () => new Date().toISOString().slice(0, 7);
@@ -71,6 +73,7 @@ const Home = () => {
 
     const [time, setTime] = useState(new Date());
     const [stats, setStats] = useState({ users: null, companies: null, departments: null });
+    const [salesStats, setSalesStats] = useState({ leads: null, quotesTotal: null, accepted: null, revenue: null });
     const [today, setToday] = useState(null);
     const [summary, setSummary] = useState(null);
     const [teamToday, setTeamToday] = useState([]);
@@ -88,7 +91,7 @@ const Home = () => {
         getLocation().then(l => setLocation(l)).catch(e => setLocationError(e.message)).finally(() => setLocating(false));
     }, []);
 
-    // Load all stats
+    // Load org + sales stats
     useEffect(() => {
         const load = async () => {
             const results = await Promise.allSettled([
@@ -97,13 +100,30 @@ const Home = () => {
                 canSee(["VIEW_DEPARTMENT", "VIEW_ALL_DEPARTMENTS"]) ? getAllCompanyDepartments() : Promise.resolve(null),
             ]);
             setStats({
-                users: results[0].value?.users?.length ?? null,
-                companies: results[1].value?.companies?.length ?? null,
+                users:       results[0].value?.users?.length ?? null,
+                companies:   results[1].value?.companies?.length ?? null,
                 departments: results[2].value?.departments?.length ?? null,
             });
         };
         load();
-    }, []);
+
+        // Sales stats — only for admin
+        if (isAdmin) {
+            Promise.allSettled([
+                getLeads({ limit: 1 }),
+                getAllQuotes({ limit: 1 }),
+                getAllQuotes({ status: "accepted", limit: 200 }),
+            ]).then(([leadsRes, quotesRes, acceptedRes]) => {
+                const acceptedList = acceptedRes.value?.quotes || [];
+                setSalesStats({
+                    leads:       leadsRes.value?.total ?? null,
+                    quotesTotal: quotesRes.value?.total ?? null,
+                    accepted:    acceptedRes.value?.total ?? null,
+                    revenue:     acceptedList.reduce((s, q) => s + (q.grandTotal || 0), 0),
+                });
+            });
+        }
+    }, [isAdmin]); // eslint-disable-line
 
     // Load attendance
     useEffect(() => {
@@ -165,7 +185,7 @@ const Home = () => {
             </div>
 
             {/* Org Stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                 {canSee(["VIEW_USER", "VIEW_ALL_USERS"]) && (
                     <StatCard icon={Users} label="Employees" value={stats.users} sub="Total registered" color="bg-blue-50 text-blue-600" to="/users" />
                 )}
@@ -179,6 +199,16 @@ const Home = () => {
                     <StatCard icon={TrendingUp} label="Hours This Month" value={`${summary.totalHours}h`} sub={`${summary.totalDays} days tracked`} color="bg-indigo-50 text-indigo-600" to="/attendance" />
                 )}
             </div>
+
+            {/* Sales Stats — admin only */}
+            {isAdmin && salesStats.leads !== null && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <StatCard icon={TrendingUp}   label="Total Leads"      value={salesStats.leads}       sub="All time"          color="bg-blue-50 text-blue-600"    to="/leads" />
+                    <StatCard icon={FileText}     label="Total Quotes"     value={salesStats.quotesTotal} sub="All statuses"      color="bg-indigo-50 text-indigo-600" to="/quotes" />
+                    <StatCard icon={CheckCircle}  label="Accepted Quotes"  value={salesStats.accepted}    sub="Won deals"         color="bg-emerald-50 text-emerald-600" to="/quotes" />
+                    <StatCard icon={IndianRupee}  label="Revenue"          value={salesStats.revenue !== null ? `₹${Number(salesStats.revenue).toLocaleString("en-IN")}` : "—"} sub="Accepted quotes" color="bg-green-50 text-green-600" to="/quotes" />
+                </div>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Check-in Card */}
@@ -350,12 +380,12 @@ const Home = () => {
                     <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Quick Access</h2>
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                         {[
-                            { label: "Employees",   icon: Users,        path: "/users",          color: "bg-blue-50 text-blue-600",   perms: ["VIEW_USER","VIEW_ALL_USERS"] },
-                            { label: "Companies",   icon: Building2,    path: "/companies",      color: "bg-purple-50 text-purple-600", superAdminOnly: true },
-                            { label: "Departments", icon: FolderKanban, path: "/departments",    color: "bg-green-50 text-green-600",  perms: ["VIEW_DEPARTMENT","VIEW_ALL_DEPARTMENTS"] },
-                            { label: "Roles",       icon: ShieldCheck,  path: "/settings/roles", color: "bg-orange-50 text-orange-600", perms: ["VIEW_ROLE","VIEW_ALL_ROLES"] },
-                            { label: "Attendance",  icon: Calendar,     path: "/attendance",     color: "bg-cyan-50 text-cyan-600",    perms: [] },
-                            { label: "Work Shifts", icon: Clock,        path: "/work-shifts",    color: "bg-indigo-50 text-indigo-600", perms: [] },
+                            { label: "Employees",        icon: Users,        path: "/users",             color: "bg-blue-50 text-blue-600",     perms: ["VIEW_USER","VIEW_ALL_USERS"] },
+                            { label: "Departments",      icon: FolderKanban, path: "/departments",       color: "bg-green-50 text-green-600",   perms: ["VIEW_DEPARTMENT","VIEW_ALL_DEPARTMENTS"] },
+                            { label: "Leads",            icon: TrendingUp,   path: "/leads",             color: "bg-sky-50 text-sky-600",       perms: [] },
+                            { label: "Quotes",           icon: Receipt,      path: "/quotes",            color: "bg-indigo-50 text-indigo-600", perms: [] },
+                            { label: "Payment Accounts", icon: CreditCard,   path: "/payment-accounts",  color: "bg-amber-50 text-amber-600",   perms: [] },
+                            { label: "Attendance",       icon: Calendar,     path: "/attendance",        color: "bg-cyan-50 text-cyan-600",     perms: [] },
                         ].filter(c => c.superAdminOnly ? isSuperAdmin : canSee(c.perms)).map(c => (
                             <Link key={c.path} to={c.path} className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col items-center gap-2 hover:shadow-md hover:border-blue-200 transition group">
                                 <div className={`p-2.5 rounded-xl ${c.color}`}><c.icon size={18} /></div>

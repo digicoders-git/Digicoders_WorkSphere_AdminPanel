@@ -1,11 +1,14 @@
 import api from "../../../services/axios";
 import { ENDPOINTS } from "../../../services/endpoints";
-import { renderHtmlToA4Pdf, printQuoteHtml } from "./quotePdfUtils";
+import { printQuoteHtml } from "./quotePdfUtils";
 
 const Q = ENDPOINTS.QUOTE;
 
 export const createQuote = (data) => 
     api.post(Q.CREATE, data).then(r => r.data);
+
+export const getAllQuotes = (params = {}) =>
+    api.get(Q.GET_ALL, { params }).then(r => r.data);
 
 export const getQuotesByLead = (leadId, companyId) =>
     api.get(Q.GET_BY_LEAD(leadId), { params: { companyId } }).then(r => r.data.quotes ?? r.data);
@@ -22,14 +25,22 @@ export const deleteQuote = (quoteId) =>
 export const getQuoteSendDefaults = (quoteId) =>
     api.get(Q.SEND_DEFAULTS(quoteId)).then((r) => r.data);
 
+/** PDF generation + email can exceed the default 10s axios timeout */
+const QUOTE_SEND_TIMEOUT_MS = 120_000;
+const QUOTE_HTML_TIMEOUT_MS = 60_000;
+
 export const sendQuoteToCustomer = (quoteId, email, { resend = false, subject, body } = {}) =>
     api
-        .post(Q.SEND(quoteId), {
-            ...(email ? { email } : {}),
-            resend,
-            ...(subject !== undefined ? { subject } : {}),
-            ...(body !== undefined ? { body } : {}),
-        })
+        .post(
+            Q.SEND(quoteId),
+            {
+                ...(email ? { email } : {}),
+                resend,
+                ...(subject !== undefined ? { subject } : {}),
+                ...(body !== undefined ? { body } : {}),
+            },
+            { timeout: QUOTE_SEND_TIMEOUT_MS }
+        )
         .then((r) => r.data);
 
 export const addQuoteFollowUp = (quoteId, data) =>
@@ -39,13 +50,9 @@ export const updateQuoteFollowUp = (quoteId, followUpId, data) =>
     api.patch(Q.FOLLOW_UP_UPDATE(quoteId, followUpId), data).then((r) => r.data);
 
 export const getQuoteHTML = (quoteId) =>
-    api.get(Q.GET_HTML(quoteId), { responseType: "text" }).then(r => r.data);
+    api.get(Q.GET_HTML(quoteId), { responseType: "text", timeout: QUOTE_HTML_TIMEOUT_MS }).then((r) => r.data);
 
-/** Download A4 PDF file from server quote HTML */
-export const generatePDFFromHTML = (htmlContent, filename = "quote.pdf") =>
-    renderHtmlToA4Pdf(htmlContent, filename);
-
-/** Open print dialog for sharpest PDF (Save as PDF in printer dialog) */
+/** Open print dialog — choose Save as PDF in the printer dialog */
 export const printPDFFromHTML = (htmlContent) => printQuoteHtml(htmlContent);
 
 // Alternative: Generate PDF using jsPDF directly (simpler method)

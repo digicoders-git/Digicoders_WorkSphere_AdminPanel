@@ -21,8 +21,8 @@ import Payroll from "../modules/payroll/pages/Payroll";
 import Projects from "../modules/projects/pages/Projects";
 import ProjectDetail from "../modules/projects/pages/ProjectDetail";
 import Leads from "../modules/leads/pages/Leads";
-
-
+import QuoteManagement from "../modules/quotes/pages/QuoteManagement";
+import PaymentAccounts from "../modules/quotes/pages/PaymentAccounts";
 
 const AppRoute = createBrowserRouter([
     {
@@ -49,6 +49,8 @@ const AppRoute = createBrowserRouter([
             { path: "/projects", element: <Projects /> },
             { path: "/projects/:id", element: <ProjectDetail /> },
             { path: "/leads", element: <Leads /> },
+            { path: "/quotes", element: <QuoteManagement /> },
+            { path: "/payment-accounts", element: <PaymentAccounts /> },
             { path: "/notifications", element: <Notifications /> },
             { path: "/settings", element: <Settings /> },
             { path: "/settings/roles", element: <Role /> },

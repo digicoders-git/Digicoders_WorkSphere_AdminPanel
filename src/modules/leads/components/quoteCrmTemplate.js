@@ -58,16 +58,10 @@ export const CRM_WEB_QUOTE_TEMPLATE = {
         },
         {
             requirement: "SSL Certificate",
-            term: "Our Side",
+            term: "Client Side",
             price: 0,
-            priceType: "amount",
+            priceType: "client_side",
         },
     ],
-    notes: `Payment Terms:
-• 40% advance to start development
-• 30% at 50% module completion
-• 30% on final delivery
-
-Development timeline: 20–25 working days (approx.)
-GST 18% excluded from offered development price.`,
+    notes: "",
 };

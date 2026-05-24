@@ -2,14 +2,15 @@ import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
     Building2, ShieldCheck, Users, Pencil, X, Check,
-    Upload, Globe, MapPin, Calendar, User, ArrowRight
+    Upload, Globe, MapPin, Calendar, User, ArrowRight,
+    TrendingUp, Receipt,
 } from "lucide-react";
 import { toast } from "react-toastify";
 import { useStore } from "../context/StoreContext";
 import { fetchCompanyById, updateCompany, uploadCompanyIcon } from "../modules/company/services/companyService";
 
 const inp = "w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white";
-const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
 // ─── Company Profile Tab ──────────────────────────────────────────────────────
 const CompanyProfileTab = ({ user }) => {
@@ -196,6 +197,22 @@ const QUICK_LINKS = [
         color: "bg-blue-50 text-blue-600",
         superAdminOnly: true,
     },
+    {
+        title: "Leads",
+        description: "Track and manage your sales leads pipeline.",
+        path: "/leads",
+        icon: TrendingUp,
+        color: "bg-sky-50 text-sky-600",
+        perms: [],
+    },
+    {
+        title: "Quote Management",
+        description: "View and track all quotes across all leads.",
+        path: "/quotes",
+        icon: Receipt,
+        color: "bg-indigo-50 text-indigo-600",
+        perms: [],
+    },
 ];
 
 const TABS = [
@@ -205,9 +222,15 @@ const TABS = [
 
 const Settings = () => {
     const { user } = useStore();
-    const permissions = user?.role?.permissions || [];
+    const permissions  = user?.role?.permissions || [];
     const isSuperAdmin = user?.role?.name === "super_admin";
+    const isAdmin      = user?.role?.name === "admin" || isSuperAdmin;
     const canSee = (perms) => isSuperAdmin || !perms.length || perms.some(p => permissions.includes(p));
+    const canSeeLink = (o) => {
+        if (o.superAdminOnly) return isSuperAdmin;
+        if (o.adminOnly)      return isAdmin;
+        return canSee(o.perms || []);
+    };
 
     const [tab, setTab] = useState("company");
 
@@ -236,7 +259,7 @@ const Settings = () => {
 
             {tab === "links" && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {QUICK_LINKS.filter(o => o.superAdminOnly ? isSuperAdmin : canSee(o.perms)).map(opt => (
+                    {QUICK_LINKS.filter(canSeeLink).map(opt => (
                         <Link key={opt.path} to={opt.path}
                             className="bg-white border border-gray-200 rounded-xl p-6 hover:shadow-md hover:border-blue-200 transition group flex flex-col gap-4">
                             <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${opt.color}`}>

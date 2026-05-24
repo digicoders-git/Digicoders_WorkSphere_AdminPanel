@@ -10,7 +10,6 @@ import LeadImport from "../components/LeadImport.jsx";
 import LeadFieldManager from "../components/LeadFieldManager.jsx";
 import QuoteForm from "../components/QuoteForm.jsx";
 import QuotePreview from "../components/QuotePreview.jsx";
-import QuoteProfileManager from "../components/QuoteProfileManager.jsx";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const fmtUS = (raw = "") => {
@@ -144,7 +143,7 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
     const [matchedLead, setMatchedLead] = useState(null);
     const [fullLead, setFullLead] = useState(null);
     const [newComm, setNewComm] = useState({ subject: "", description: "" });
-    const [rightTabActive, setRightTabActive] = useState("communication"); // communication | quotes
+    const [rightTabActive, setRightTabActive] = useState("communication"); // communication | quotes | history
     const [selectedQuotePreview, setSelectedQuotePreview] = useState(null);
     const [quoteToEdit, setQuoteToEdit] = useState(null);
     const debounceRef = useRef(null);
@@ -452,37 +451,22 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
                         {isExisting ? (
                             <>
                                 {/* Tabs */}
-                                <div className="px-6 pt-5 border-b flex gap-4 overflow-x-auto">
-                                    <button
-                                        onClick={() => setRightTabActive("communication")}
-                                        className={`pb-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-                                            rightTabActive === "communication"
-                                                ? "border-blue-600 text-blue-600"
-                                                : "border-transparent text-gray-600 hover:text-gray-900"
-                                        }`}
-                                    >
-                                        Communication
-                                    </button>
-                                    <button
-                                        onClick={() => setRightTabActive("quotes")}
-                                        className={`pb-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors flex items-center gap-1 ${
-                                            rightTabActive === "quotes"
-                                                ? "border-blue-600 text-blue-600"
-                                                : "border-transparent text-gray-600 hover:text-gray-900"
-                                        }`}
-                                    >
-                                        <FileText size={14} /> Quotes
-                                    </button>
-                                    <button
-                                        onClick={() => setRightTabActive("history")}
-                                        className={`pb-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-                                            rightTabActive === "history"
-                                                ? "border-blue-600 text-blue-600"
-                                                : "border-transparent text-gray-600 hover:text-gray-900"
-                                        }`}
-                                    >
-                                        History
-                                    </button>
+                                <div className="px-6 pt-5 border-b flex gap-4 overflow-x-auto shrink-0">
+                                    {[
+                                        { key: "communication", label: "Communication" },
+                                        { key: "quotes",        label: "Quotes",  icon: FileText },
+                                        { key: "history",       label: "History" },
+                                    ].map(({ key, label, icon: Icon }) => (
+                                        <button key={key}
+                                            onClick={() => setRightTabActive(key)}
+                                            className={`pb-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors flex items-center gap-1 ${
+                                                rightTabActive === key
+                                                    ? "border-blue-600 text-blue-600"
+                                                    : "border-transparent text-gray-600 hover:text-gray-900"
+                                            }`}>
+                                            {Icon && <Icon size={13} />} {label}
+                                        </button>
+                                    ))}
                                 </div>
 
                                 {/* Tab Content */}
@@ -515,10 +499,6 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
                                                     lead={quoteLead}
                                                     onClose={() => setSelectedQuotePreview(null)}
                                                     onUpdated={(q) => setSelectedQuotePreview(q)}
-                                                    onEditDraft={(q) => {
-                                                        setSelectedQuotePreview(null);
-                                                        setQuoteToEdit(q);
-                                                    }}
                                                 />
                                             )}
                                         </div>
@@ -587,7 +567,7 @@ const Leads = () => {
     const [selected, setSelected] = useState(null);
     const [customFields, setCustomFields] = useState([]);
     const [fieldManagerOpen, setFieldManagerOpen] = useState(false);
-    const [quoteProfileManagerOpen, setQuoteProfileManagerOpen] = useState(false);
+    const [deleteConfirmId, setDeleteConfirmId] = useState(null);
     const [filterStatus, setFilterStatus] = useState("");
     const [filterAssignedTo, setFilterAssignedTo] = useState("");
     const searchDebounce          = useRef(null);
@@ -668,10 +648,10 @@ const Leads = () => {
     };
 
     const handleDelete = async (id) => {
-        if (!window.confirm("Delete this lead?")) return;
         try {
             await deleteLead(id);
             toast.success("Lead deleted");
+            setDeleteConfirmId(null);
             const newPage = leads.length === 1 && page > 1 ? page - 1 : page;
             setPage(newPage);
             load(newPage, search, filterStatus, filterAssignedTo);
@@ -699,14 +679,6 @@ const Leads = () => {
                             <button onClick={() => setFieldManagerOpen(true)}
                                 className="flex items-center gap-1.5 px-4 py-2 bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium transition">
                                 <Settings size={15} /> Manage Fields
-                            </button>
-                        )}
-                        {isAdmin && (
-                            <button
-                                onClick={() => setQuoteProfileManagerOpen(true)}
-                                className="flex items-center gap-1.5 px-4 py-2 bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium transition"
-                            >
-                                <FileText size={15} /> Quote Profiles
                             </button>
                         )}
                         {canWrite && (
@@ -795,24 +767,34 @@ const Leads = () => {
                                                 : <span className="text-gray-300">—</span>}
                                     </td>
                                     <td className="px-4 py-3">
-                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition justify-end">
-                                            <button onClick={() => openView(lead)}
-                                                className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg">
-                                                <Eye size={13} />
-                                            </button>
-                                            {canWrite && (
-                                                <button onClick={() => { setSelected(lead); setModalOpen(true); }}
-                                                    className="p-1.5 bg-yellow-50 hover:bg-yellow-100 text-yellow-600 rounded-lg">
-                                                    <Pencil size={13} />
-                                                </button>
-                                            )}
-                                            {canDelete && (
+                                        {deleteConfirmId === lead._id ? (
+                                            <div className="flex items-center gap-1.5 justify-end">
+                                                <span className="text-[10px] text-red-600 font-medium">Delete?</span>
                                                 <button onClick={() => handleDelete(lead._id)}
-                                                    className="p-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-lg">
-                                                    <Trash2 size={13} />
+                                                    className="px-2 py-1 text-[10px] bg-red-600 text-white rounded-lg hover:bg-red-700">Yes</button>
+                                                <button onClick={() => setDeleteConfirmId(null)}
+                                                    className="px-2 py-1 text-[10px] bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200">No</button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition justify-end">
+                                                <button onClick={() => openView(lead)}
+                                                    className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg">
+                                                    <Eye size={13} />
                                                 </button>
-                                            )}
-                                        </div>
+                                                {canWrite && (
+                                                    <button onClick={() => { setSelected(lead); setModalOpen(true); }}
+                                                        className="p-1.5 bg-yellow-50 hover:bg-yellow-100 text-yellow-600 rounded-lg">
+                                                        <Pencil size={13} />
+                                                    </button>
+                                                )}
+                                                {canDelete && (
+                                                    <button onClick={() => setDeleteConfirmId(lead._id)}
+                                                        className="p-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-lg">
+                                                        <Trash2 size={13} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
                                     </td>
                                 </tr>
                             ))}
@@ -844,12 +826,6 @@ const Leads = () => {
                     getFieldConfig().then(r => setCustomFields(r.fields || [])).catch(() => {});
                     load(page, search, filterStatus, filterAssignedTo);
                 }}
-            />
-
-            <QuoteProfileManager
-                isOpen={quoteProfileManagerOpen}
-                onClose={() => setQuoteProfileManagerOpen(false)}
-                onSave={() => {}}
             />
 
             <LeadImport

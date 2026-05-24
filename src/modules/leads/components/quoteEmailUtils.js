@@ -25,6 +25,17 @@ export const PLACEHOLDER_GROUP_LABELS = {
     custom: "Custom lead fields",
 };
 
+/** Insert {{key}} at cursor in a controlled input/textarea */
+export const insertPlaceholderAtCursor = (value, selectionStart, selectionEnd, key) => {
+    const token = `{{${key}}}`;
+    const start = selectionStart ?? value.length;
+    const end = selectionEnd ?? start;
+    return {
+        value: value.slice(0, start) + token + value.slice(end),
+        cursor: start + token.length,
+    };
+};
+
 export const customFieldsToObject = (customFields) => {
     if (!customFields) return {};
     if (typeof customFields.get === "function") {
@@ -53,6 +64,9 @@ export const buildAllEmailPlaceholders = (fieldConfig = []) => [
     ...placeholdersFromFieldConfig(fieldConfig),
 ];
 
+/** Same list for proposal PDF/HTML and email templates */
+export const buildAllQuotePlaceholders = buildAllEmailPlaceholders;
+
 export const DEFAULT_QUOTE_EMAIL_SUBJECT = "Project Quote — {{systemName}} for {{orgName}}";
 
 export const DEFAULT_QUOTE_EMAIL_BODY = `Dear {{contactPerson}},
@@ -77,6 +91,9 @@ export const applyQuotePlaceholders = (template, context) => {
     });
 };
 
+/** Resolve {{key}} tokens in proposal notes, features, etc. */
+export const resolveQuoteText = applyQuotePlaceholders;
+
 export const buildClientPlaceholderContext = (quote, lead, fieldConfig = []) => {
     const proposed =
         quote.proposedSystemCategory === "Other"
@@ -85,6 +102,8 @@ export const buildClientPlaceholderContext = (quote, lead, fieldConfig = []) => 
 
     const leadData = lead || quote.leadId || {};
     const custom = customFieldsToObject(leadData.customFields);
+    // Use populated profile name if available, fall back gracefully
+    const profileCompany = quote.quoteProfileId?.companyName || "";
 
     const ctx = {
         systemName: quote.systemName || "Project",
@@ -97,9 +116,11 @@ export const buildClientPlaceholderContext = (quote, lead, fieldConfig = []) => 
             day: "numeric",
         }),
         validityDays: "30",
-        companyName: "DigiCoders Technologies (P) Ltd.",
-        senderName: "Team DigiCoders",
-        senderEmail: "",
+        companyName: profileCompany || "Your Company",
+        senderName: quote.createdBy
+            ? `${quote.createdBy.firstName || ""} ${quote.createdBy.lastName || ""}`.trim() || "Team"
+            : "Team",
+        senderEmail: quote.createdBy?.email || "",
         contactPerson: leadData.contactPerson || "Sir/Ma'am",
         orgName: leadData.orgName || "your organization",
         email: leadData.email || "",

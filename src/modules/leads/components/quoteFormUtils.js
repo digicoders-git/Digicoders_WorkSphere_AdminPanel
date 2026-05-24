@@ -37,6 +37,7 @@ export const emptyQuoteForm = () => ({
     techStack: [{ label: "" }],
     otherRequirements: [{ requirement: "", term: "", price: 0, priceType: "amount" }],
     notes: "",
+    leadFieldsToDisplay: [],
 });
 
 export const quoteToForm = (quote) => ({
@@ -64,6 +65,7 @@ export const quoteToForm = (quote) => ({
           }))
         : [{ requirement: "", term: "", price: 0, priceType: "amount" }],
     notes: quote.notes || "",
+    leadFieldsToDisplay: quote.leadFieldsToDisplay || [],
 });
 
 export const calcQuoteTotals = (form) => {
@@ -87,4 +89,5 @@ export const formToPayload = (form, leadId, companyId) => ({
     techStack: form.techStack,
     otherRequirements: form.otherRequirements,
     notes: form.notes,
+    leadFieldsToDisplay: form.leadFieldsToDisplay || [],
 });

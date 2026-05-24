@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useStore } from "../context/StoreContext";
 import {
     LayoutDashboard, Users, Building2, FolderKanban, ShieldCheck,
-    Settings, UserCircle, LogOut, ChevronLeft, Menu, Calendar, IndianRupee, Clock, X, Bell, Briefcase, Palmtree, CalendarDays, UserCheck, FileText, Kanban, TrendingUp
+    Settings, UserCircle, LogOut, ChevronLeft, Menu, Calendar, IndianRupee, Clock, X, Bell, Briefcase, Palmtree, CalendarDays, UserCheck, FileText, Kanban, TrendingUp, Receipt
 } from "lucide-react";
 import { useNotifications } from "../context/NotificationContext";
 import { authlogout } from "../modules/auth/services/authService";
@@ -25,8 +25,9 @@ const NAV = [
     {
         group: "Projects",
         items: [
-            { name: "Projects", icon: Kanban,     path: "/projects", permissions: [] },
-            { name: "Leads",    icon: TrendingUp,  path: "/leads",    permissions: [] },
+            { name: "Projects",         icon: Kanban,     path: "/projects",          permissions: [] },
+            { name: "Leads",            icon: TrendingUp,  path: "/leads",             permissions: [] },
+            { name: "Quotes",           icon: Receipt,     path: "/quotes",            permissions: [] },
         ],
     },
     {
@@ -61,8 +62,10 @@ const Sidebar = ({ mobileOpen, setMobileOpen }) => {
     }, []);
 
     const isSuperAdmin = user?.role?.name === "super_admin";
+    const isAdmin = user?.role?.name === "admin" || isSuperAdmin;
     const canSeeItem = (item) => {
         if (item.superAdminOnly) return isSuperAdmin;
+        if (item.adminOnly) return isAdmin;
         const perms = item.permissions || [];
         return isSuperAdmin || !perms.length || perms.some(p => permissions.includes(p));
     };
