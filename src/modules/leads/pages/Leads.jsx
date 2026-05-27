@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Plus, X, Pencil, Trash2, Eye, User, Send, MessageSquare, ChevronLeft, ChevronRight, Upload, Settings, FileText } from "lucide-react";
 import { toast } from "react-toastify";
 import { useStore } from "../../../context/StoreContext";
@@ -8,8 +8,8 @@ import LeadCommunication from "../components/LeadCommunication.jsx";
 import LeadHistory from "../components/LeadHistory.jsx";
 import LeadImport from "../components/LeadImport.jsx";
 import LeadFieldManager from "../components/LeadFieldManager.jsx";
-import QuoteForm from "../components/QuoteForm.jsx";
-import QuotePreview from "../components/QuotePreview.jsx";
+import GenerateProposal from "../components/GenerateProposal.jsx";
+import TemplateEditor from "../components/TemplateEditor.jsx";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const fmtUS = (raw = "") => {
@@ -60,7 +60,9 @@ const formDataFromLead = (lead, customFields) => {
         assignedTo: lead.assignedTo?._id || lead.assignedTo || "",
     };
     customFields.forEach((f) => {
-        formData[f.key] = stored[f.key] ?? "";
+        formData[f.key] = f.type === "table"
+            ? (Array.isArray(stored[f.key]) ? stored[f.key] : [])
+            : (stored[f.key] ?? "");
     });
     return formData;
 };
@@ -133,7 +135,7 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
             contactNumber: "", orgName: "", address: "", contactPerson: "",
             email: "", status: "New Lead", assignedTo: currentUserId || "",
         };
-        customFields.forEach(f => { base[f.key] = ""; });
+        customFields.forEach(f => { base[f.key] = f.type === "table" ? [] : ""; });
         return base;
     }, [currentUserId, customFields]);
 
@@ -144,8 +146,8 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
     const [fullLead, setFullLead] = useState(null);
     const [newComm, setNewComm] = useState({ subject: "", description: "" });
     const [rightTabActive, setRightTabActive] = useState("communication"); // communication | quotes | history
-    const [selectedQuotePreview, setSelectedQuotePreview] = useState(null);
-    const [quoteToEdit, setQuoteToEdit] = useState(null);
+    const [templateEditorOpen, setTemplateEditorOpen] = useState(false);
+    const [templateEditorTarget, setTemplateEditorTarget] = useState(null);
     const debounceRef = useRef(null);
 
     useEffect(() => {
@@ -253,21 +255,124 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
     const history = fullLead?.history || [];
     const activeLeadId = initial?._id || matchedLead?._id;
 
-    /** Live lead for quote preview — reflects form while editing, saved lead after update */
-    const quoteLead = useMemo(() => {
-        if (!isOpen || !isExisting || !activeLead) return null;
-        if (viewMode) return activeLead;
-        return leadSnapshotFromForm(form, activeLead, users, customFields);
-    }, [isOpen, isExisting, activeLead, viewMode, form, users, customFields]);
-
     if (!isOpen) return null;
+
+    // ── Table field helpers ────────────────────────────────────────────────
+    const addTableRow = (key, columns) => {
+        const emptyRow = {};
+        columns.forEach(c => { emptyRow[c.key] = ""; });
+        set(key, [...(form[key] || []), emptyRow]);
+    };
+    const updateTableCell = (key, rowIdx, colKey, value) => {
+        const rows = (form[key] || []).map((r, i) =>
+            i === rowIdx ? { ...r, [colKey]: value } : r
+        );
+        set(key, rows);
+    };
+    const removeTableRow = (key, rowIdx) =>
+        set(key, (form[key] || []).filter((_, i) => i !== rowIdx));
 
     // Render custom field based on type
     const renderCustomField = (field, isViewMode = false) => {
-        const value = isViewMode 
-            ? (activeLead?.customFields?.get?.(field.key) || activeLead?.customFields?.[field.key] || "")
-            : (form[field.key] || "");
-        
+        const rawVal = isViewMode
+            ? (activeLead?.customFields?.get?.(field.key) ?? activeLead?.customFields?.[field.key])
+            : form[field.key];
+
+        // ── TABLE ──────────────────────────────────────────────────────────
+        if (field.type === "table") {
+            const rows = Array.isArray(rawVal) ? rawVal : [];
+            const cols = field.columns || [];
+            if (isViewMode) {
+                return (
+                    <div key={field.key} className="sm:col-span-2">
+                        <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1.5">{field.label}</p>
+                        {rows.length === 0 ? (
+                            <p className="text-sm text-gray-300">—</p>
+                        ) : (
+                            <div className="overflow-x-auto rounded-lg border border-gray-200">
+                                <table className="w-full text-xs">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            {cols.map(c => (
+                                                <th key={c.key} className="px-3 py-2 text-left font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{c.label}</th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {rows.map((row, ri) => (
+                                            <tr key={ri}>
+                                                {cols.map(c => (
+                                                    <td key={c.key} className="px-3 py-2 text-gray-700">{row[c.key] || <span className="text-gray-300">—</span>}</td>
+                                                ))}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                );
+            }
+            return (
+                <div key={field.key} className="sm:col-span-2">
+                    <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-medium text-gray-500">
+                            {field.label} {field.required && <span className="text-red-500">*</span>}
+                        </label>
+                        <button type="button"
+                            onClick={() => addTableRow(field.key, cols)}
+                            className="flex items-center gap-1 px-2.5 py-1 text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg font-medium border border-purple-200">
+                            <Plus size={11} /> Add row
+                        </button>
+                    </div>
+                    {rows.length === 0 ? (
+                        <div className="flex items-center justify-center py-4 border-2 border-dashed border-gray-200 rounded-lg text-xs text-gray-400">
+                            No entries yet — click "Add row"
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto rounded-lg border border-gray-200">
+                            <table className="w-full text-xs">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        {cols.map(c => (
+                                            <th key={c.key} className="px-3 py-2 text-left font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{c.label}</th>
+                                        ))}
+                                        <th className="w-8" />
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {rows.map((row, ri) => (
+                                        <tr key={ri}>
+                                            {cols.map(c => (
+                                                <td key={c.key} className="px-2 py-1">
+                                                    <input
+                                                        type={c.type === "number" ? "number" : c.type === "date" ? "date" : "text"}
+                                                        value={row[c.key] || ""}
+                                                        onChange={e => updateTableCell(field.key, ri, c.key, e.target.value)}
+                                                        className="w-full px-2 py-1.5 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                                                        placeholder={c.label}
+                                                    />
+                                                </td>
+                                            ))}
+                                            <td className="px-1 py-1">
+                                                <button type="button"
+                                                    onClick={() => removeTableRow(field.key, ri)}
+                                                    className="p-1 rounded hover:bg-red-50 text-red-400">
+                                                    <Trash2 size={11} />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // ── Standard fields ────────────────────────────────────────────────
+        const value = rawVal ?? "";
         if (isViewMode) {
             return (
                 <div key={field.key}>
@@ -276,19 +381,18 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
                 </div>
             );
         }
-
         return (
-            <div key={field.key} className={field.type === "date" ? "" : "sm:col-span-1"}>
+            <div key={field.key}>
                 <label className="block text-xs font-medium text-gray-500 mb-1">
                     {field.label} {field.required && <span className="text-red-500">*</span>}
                 </label>
                 {field.type === "text" && (
                     <input value={form[field.key] || ""} onChange={e => set(field.key, e.target.value)}
-                        placeholder={field.label} className={inp} />
+                        placeholder={field.placeholder || field.label} className={inp} />
                 )}
                 {field.type === "number" && (
                     <input type="number" value={form[field.key] || ""} onChange={e => set(field.key, e.target.value)}
-                        placeholder={field.label} className={inp} />
+                        placeholder={field.placeholder || field.label} className={inp} />
                 )}
                 {field.type === "date" && (
                     <input type="date" value={form[field.key] || ""} onChange={e => set(field.key, e.target.value)} className={inp} />
@@ -304,8 +408,8 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
             </div>
         );
     };
-
     return (
+        <>
         <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div className="absolute inset-0 bg-black/50" onClick={onClose} />
             <div className="relative w-[calc(100vw-32px)] h-[calc(100vh-32px)] max-w-6xl bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
@@ -454,7 +558,7 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
                                 <div className="px-6 pt-5 border-b flex gap-4 overflow-x-auto shrink-0">
                                     {[
                                         { key: "communication", label: "Communication" },
-                                        { key: "quotes",        label: "Quotes",  icon: FileText },
+                                        { key: "proposals",     label: "Proposals", icon: FileText },
                                         { key: "history",       label: "History" },
                                     ].map(({ key, label, icon: Icon }) => (
                                         <button key={key}
@@ -482,25 +586,13 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
                                             </div>
                                         </>
                                     )}
-                                    {rightTabActive === "quotes" && (
+                                    {rightTabActive === "proposals" && (
                                         <div className="px-6 py-5 min-h-[400px]">
-                                            {!selectedQuotePreview ? (
-                                                <QuoteForm
-                                                    leadId={activeLeadId}
-                                                    lead={quoteLead}
-                                                    companyId={quoteLead?.companyId?._id || quoteLead?.companyId || fullLead?.companyId?._id || fullLead?.companyId}
-                                                    onOpenPreview={(q) => setSelectedQuotePreview(q)}
-                                                    editQuote={quoteToEdit}
-                                                    onEditConsumed={() => setQuoteToEdit(null)}
-                                                />
-                                            ) : (
-                                                <QuotePreview
-                                                    quote={selectedQuotePreview}
-                                                    lead={quoteLead}
-                                                    onClose={() => setSelectedQuotePreview(null)}
-                                                    onUpdated={(q) => setSelectedQuotePreview(q)}
-                                                />
-                                            )}
+                                            <GenerateProposal
+                                                lead={activeLead}
+                                                companyId={activeLead?.companyId?._id || activeLead?.companyId}
+                                                onOpenTemplateEditor={() => { setTemplateEditorTarget(null); setTemplateEditorOpen(true); }}
+                                            />
                                         </div>
                                     )}
                                     {rightTabActive === "history" && (
@@ -519,6 +611,15 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
                 </div>
             </div>
         </div>
+        {templateEditorOpen && (
+            <TemplateEditor
+                template={templateEditorTarget}
+                leadFields={[]}
+                onSaved={() => setTemplateEditorOpen(false)}
+                onClose={() => setTemplateEditorOpen(false)}
+            />
+        )}
+        </>
     );
 };
 

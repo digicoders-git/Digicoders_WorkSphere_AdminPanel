@@ -13,7 +13,7 @@ import { getTodayAttendance, getAttendanceSummary, getCompanyAttendance } from "
 import { checkIn, checkOut } from "../modules/attendance/services/attendanceService";
 import { getMyTaskHistory } from "../modules/projects/services/projectService";
 import { getLeads } from "../modules/leads/services/leadService";
-import { getAllQuotes } from "../modules/leads/services/quoteService";
+
 import { toast } from "react-toastify";
 
 const currentMonth = () => new Date().toISOString().slice(0, 7);
@@ -73,7 +73,7 @@ const Home = () => {
 
     const [time, setTime] = useState(new Date());
     const [stats, setStats] = useState({ users: null, companies: null, departments: null });
-    const [salesStats, setSalesStats] = useState({ leads: null, quotesTotal: null, accepted: null, revenue: null });
+    const [salesStats, setSalesStats] = useState({ leads: null });
     const [today, setToday] = useState(null);
     const [summary, setSummary] = useState(null);
     const [teamToday, setTeamToday] = useState([]);
@@ -109,19 +109,9 @@ const Home = () => {
 
         // Sales stats — only for admin
         if (isAdmin) {
-            Promise.allSettled([
-                getLeads({ limit: 1 }),
-                getAllQuotes({ limit: 1 }),
-                getAllQuotes({ status: "accepted", limit: 200 }),
-            ]).then(([leadsRes, quotesRes, acceptedRes]) => {
-                const acceptedList = acceptedRes.value?.quotes || [];
-                setSalesStats({
-                    leads:       leadsRes.value?.total ?? null,
-                    quotesTotal: quotesRes.value?.total ?? null,
-                    accepted:    acceptedRes.value?.total ?? null,
-                    revenue:     acceptedList.reduce((s, q) => s + (q.grandTotal || 0), 0),
-                });
-            });
+            getLeads({ limit: 1 }).then(r => {
+                setSalesStats({ leads: r?.total ?? null });
+            }).catch(() => {});
         }
     }, [isAdmin]); // eslint-disable-line
 
@@ -203,10 +193,8 @@ const Home = () => {
             {/* Sales Stats — admin only */}
             {isAdmin && salesStats.leads !== null && (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    <StatCard icon={TrendingUp}   label="Total Leads"      value={salesStats.leads}       sub="All time"          color="bg-blue-50 text-blue-600"    to="/leads" />
-                    <StatCard icon={FileText}     label="Total Quotes"     value={salesStats.quotesTotal} sub="All statuses"      color="bg-indigo-50 text-indigo-600" to="/quotes" />
-                    <StatCard icon={CheckCircle}  label="Accepted Quotes"  value={salesStats.accepted}    sub="Won deals"         color="bg-emerald-50 text-emerald-600" to="/quotes" />
-                    <StatCard icon={IndianRupee}  label="Revenue"          value={salesStats.revenue !== null ? `₹${Number(salesStats.revenue).toLocaleString("en-IN")}` : "—"} sub="Accepted quotes" color="bg-green-50 text-green-600" to="/quotes" />
+                    <StatCard icon={TrendingUp} label="Total Leads" value={salesStats.leads} sub="All time" color="bg-blue-50 text-blue-600" to="/leads" />
+                    <StatCard icon={FileText}   label="Proposals"   value="—" sub="Open a lead to generate" color="bg-indigo-50 text-indigo-600" to="/leads" />
                 </div>
             )}
 
