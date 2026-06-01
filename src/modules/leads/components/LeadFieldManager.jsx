@@ -11,6 +11,7 @@ const FIELD_TYPES = [
     { value: "date",     label: "Date" },
     { value: "dropdown", label: "Dropdown" },
     { value: "table",    label: "Table (multi-row)" },
+    { value: "list",     label: "List (3-level hierarchy)" },
 ];
 
 const COL_TYPES = [
@@ -149,7 +150,7 @@ export default function LeadFieldManager({ isOpen, onClose, onSave }) {
                             )}
 
                             {fields.map((field, i) => (
-                                <div key={i} className="border border-gray-200 rounded-xl overflow-hidden">
+                                <div key={field.key || field._id || i} className="border border-gray-200 rounded-xl overflow-hidden">
 
                                     {/* Row header */}
                                     <div className="flex items-center gap-2 px-3 py-2.5 bg-gray-50 cursor-pointer"
@@ -161,9 +162,11 @@ export default function LeadFieldManager({ isOpen, onClose, onSave }) {
                                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
                                             field.type === "table"
                                                 ? "bg-purple-100 text-purple-700"
-                                                : field.type === "dropdown"
-                                                    ? "bg-blue-100 text-blue-700"
-                                                    : "bg-gray-100 text-gray-500"
+                                                : field.type === "list"
+                                                    ? "bg-orange-100 text-orange-700"
+                                                    : field.type === "dropdown"
+                                                        ? "bg-blue-100 text-blue-700"
+                                                        : "bg-gray-100 text-gray-500"
                                         }`}>{field.type}</span>
                                         {field.required && <span className="text-[10px] text-red-400">*req</span>}
                                         <button onClick={e => { e.stopPropagation(); remove(i); }}
@@ -244,6 +247,17 @@ export default function LeadFieldManager({ isOpen, onClose, onSave }) {
                                                             <Plus size={11} /> Add option
                                                         </button>
                                                     </div>
+                                                </div>
+                                            )}
+
+                                            {/* List info */}
+                                            {field.type === "list" && (
+                                                <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg space-y-1">
+                                                    <p className="text-xs font-semibold text-orange-800">3-Level Hierarchy List</p>
+                                                    <p className="text-[11px] text-orange-700">Level 1 — Group name (text)</p>
+                                                    <p className="text-[11px] text-orange-700">Level 2 — Item name + cost entries (label, amount, monthly/one-time)</p>
+                                                    <p className="text-[11px] text-orange-700">Level 3 — Bullet descriptions under each item</p>
+                                                    <p className="text-[11px] text-orange-600 mt-1">Totals (monthly &amp; one-time) are calculated automatically.</p>
                                                 </div>
                                             )}
 

@@ -10,6 +10,7 @@ import LeadImport from "../components/LeadImport.jsx";
 import LeadFieldManager from "../components/LeadFieldManager.jsx";
 import GenerateProposal from "../components/GenerateProposal.jsx";
 import TemplateEditor from "../components/TemplateEditor.jsx";
+import ListFieldEditor, { ListFieldView } from "../components/ListFieldEditor.jsx";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const fmtUS = (raw = "") => {
@@ -60,7 +61,7 @@ const formDataFromLead = (lead, customFields) => {
         assignedTo: lead.assignedTo?._id || lead.assignedTo || "",
     };
     customFields.forEach((f) => {
-        formData[f.key] = f.type === "table"
+        formData[f.key] = (f.type === "table" || f.type === "list")
             ? (Array.isArray(stored[f.key]) ? stored[f.key] : [])
             : (stored[f.key] ?? "");
     });
@@ -129,13 +130,13 @@ const NewLeadCommForm = ({ comm, onChange }) => (
 );
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
-const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentUserId, onLeadUpdate, customFields }) => {
+const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentUserId, onLeadUpdate, customFields, leadFields = [] }) => {
     const emptyForm = useCallback(() => {
         const base = {
             contactNumber: "", orgName: "", address: "", contactPerson: "",
             email: "", status: "New Lead", assignedTo: currentUserId || "",
         };
-        customFields.forEach(f => { base[f.key] = f.type === "table" ? [] : ""; });
+        customFields.forEach(f => { base[f.key] = (f.type === "table" || f.type === "list") ? [] : ""; });
         return base;
     }, [currentUserId, customFields]);
 
@@ -277,6 +278,22 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
         const rawVal = isViewMode
             ? (activeLead?.customFields?.get?.(field.key) ?? activeLead?.customFields?.[field.key])
             : form[field.key];
+
+        // ── LIST (3-level hierarchy) ─────────────────────────────────────────
+        if (field.type === "list") {
+            if (isViewMode) {
+                return <ListFieldView key={field.key} label={field.label} value={rawVal} />;
+            }
+            return (
+                <ListFieldEditor
+                    key={field.key}
+                    label={field.label}
+                    required={field.required}
+                    value={form[field.key]}
+                    onChange={v => set(field.key, v)}
+                />
+            );
+        }
 
         // ── TABLE ──────────────────────────────────────────────────────────
         if (field.type === "table") {
@@ -614,7 +631,7 @@ const LeadModal = ({ isOpen, onClose, initial, onSubmit, saving, users, currentU
         {templateEditorOpen && (
             <TemplateEditor
                 template={templateEditorTarget}
-                leadFields={[]}
+                leadFields={leadFields}
                 onSaved={() => setTemplateEditorOpen(false)}
                 onClose={() => setTemplateEditorOpen(false)}
             />
@@ -667,6 +684,7 @@ const Leads = () => {
     const [importOpen, setImportOpen] = useState(false);
     const [selected, setSelected] = useState(null);
     const [customFields, setCustomFields] = useState([]);
+    const [leadFields, setLeadFields]     = useState([]);
     const [fieldManagerOpen, setFieldManagerOpen] = useState(false);
     const [deleteConfirmId, setDeleteConfirmId] = useState(null);
     const [filterStatus, setFilterStatus] = useState("");
@@ -692,6 +710,9 @@ const Leads = () => {
     useEffect(() => {
         fetchUsers().then(r => setUsers(r.users || [])).catch(() => {});
         getFieldConfig().then(r => setCustomFields(r.fields || [])).catch(() => {});
+        import("../services/proposalService").then(m =>
+            m.getLeadFields().then(r => setLeadFields(r.fields || [])).catch(() => {})
+        );
     }, []);
 
     const handleSearchInput = (val) => {
@@ -859,13 +880,13 @@ const Leads = () => {
                                         </span>
                                     </td>
                                     <td className="px-4 py-3 text-gray-600">
-                                        {lead.assignedTo && typeof lead.assignedTo === "object"
-                                            ? `${lead.assignedTo.firstName} ${lead.assignedTo.lastName}`
-                                            : lead.assignedTo
-                                                ? (users.find(u => u._id === lead.assignedTo?.toString())
-                                                    ? `${users.find(u => u._id === lead.assignedTo?.toString()).firstName} ${users.find(u => u._id === lead.assignedTo?.toString()).lastName}`
-                                                    : <span className="text-gray-300">—</span>)
-                                                : <span className="text-gray-300">—</span>}
+                                        {(() => {
+                                            const at = lead.assignedTo;
+                                            if (!at) return <span className="text-gray-300">—</span>;
+                                            if (typeof at === "object") return `${at.firstName} ${at.lastName}`;
+                                            const u = users.find(u => u._id === at?.toString());
+                                            return u ? `${u.firstName} ${u.lastName}` : <span className="text-gray-300">—</span>;
+                                        })()}
                                     </td>
                                     <td className="px-4 py-3">
                                         {deleteConfirmId === lead._id ? (
@@ -918,6 +939,7 @@ const Leads = () => {
                     load(page, search, filterStatus, filterAssignedTo);
                 }}
                 customFields={customFields}
+                leadFields={leadFields}
             />
 
             <LeadFieldManager

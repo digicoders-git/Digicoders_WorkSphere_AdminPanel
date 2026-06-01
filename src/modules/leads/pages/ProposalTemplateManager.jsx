@@ -1,15 +1,16 @@
 import { useState, useEffect } from "react";
 import { Plus, Pencil, Trash2, FileText } from "lucide-react";
 import { toast } from "react-toastify";
-import { getTemplates, deleteTemplate, getLeadFields } from "../services/proposalService";
+import { getTemplates, deleteTemplate, getLeadFields, getTemplateById } from "../services/proposalService";
 import TemplateEditor from "../components/TemplateEditor";
 
 export default function ProposalTemplateManager() {
     const [templates, setTemplates]   = useState([]);
     const [leadFields, setLeadFields] = useState([]);
     const [loading, setLoading]       = useState(true);
-    const [editorOpen, setEditorOpen] = useState(false);
-    const [editTarget, setEditTarget] = useState(null);
+    const [editorOpen, setEditorOpen]   = useState(false);
+    const [editTarget, setEditTarget]   = useState(null);
+    const [loadingEdit, setLoadingEdit] = useState(false);
 
     const load = () => {
         Promise.all([getTemplates(), getLeadFields()])
@@ -32,7 +33,16 @@ export default function ProposalTemplateManager() {
         } catch { toast.error("Failed to delete"); }
     };
 
-    const openEditor = (tpl = null) => { setEditTarget(tpl); setEditorOpen(true); };
+    const openEditor = async (tpl = null) => {
+        if (!tpl) { setEditTarget(null); setEditorOpen(true); return; }
+        try {
+            setLoadingEdit(true);
+            const res = await getTemplateById(tpl._id);
+            setEditTarget(res.template);
+            setEditorOpen(true);
+        } catch { toast.error("Failed to load template"); }
+        finally { setLoadingEdit(false); }
+    };
 
     const handleSaved = (tpl) => {
         setTemplates(prev => {
@@ -86,9 +96,10 @@ export default function ProposalTemplateManager() {
                                 <FileText size={20} className="text-blue-200 shrink-0 mt-0.5" />
                             </div>
                             <div className="flex gap-2 mt-4">
-                                <button onClick={() => openEditor(t)}
-                                    className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-xs font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg">
-                                    <Pencil size={12} /> Edit
+                                <button onClick={() => openEditor(t)} disabled={loadingEdit}
+                                    className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-xs font-medium bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg disabled:opacity-60">
+                                    {loadingEdit ? <div className="w-3 h-3 border border-blue-600 border-t-transparent rounded-full animate-spin" /> : <Pencil size={12} />}
+                                    Edit
                                 </button>
                                 <button onClick={() => handleDelete(t._id)}
                                     className="flex items-center justify-center gap-1 px-3 py-2 text-xs font-medium bg-red-50 hover:bg-red-100 text-red-600 rounded-lg">

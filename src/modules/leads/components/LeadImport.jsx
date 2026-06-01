@@ -39,7 +39,10 @@ const downloadBlob = (content, name, type = "text/csv") => {
     const blob = new Blob([content], { type });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement("a");
-    a.href = url; a.download = name; a.click();
+    a.href = url; a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
 };
 
@@ -95,8 +98,10 @@ const LeadImport = ({ isOpen, onClose, onDone, customFields = [] }) => {
 
     const handleFile = (f) => {
         if (!f) return;
-        if (!f.name.endsWith(".csv")) return toast.error("Only .csv files are supported");
+        if (!f.name.toLowerCase().endsWith(".csv")) return toast.error("Only .csv files are supported");
         if (f.size > 50 * 1024 * 1024) return toast.error("File must be under 50 MB");
+        // reset input so the same file can be re-selected after a reset
+        if (inputRef.current) inputRef.current.value = "";
         setFile(f);
         parseFile(f);
     };
@@ -163,8 +168,10 @@ const LeadImport = ({ isOpen, onClose, onDone, customFields = [] }) => {
     };
 
     const handleUpload = async () => {
+        // snapshot validRows into a local ref so the closure never reads stale state
+        const rows = validRows;
         setStage("uploading");
-        setTotal(validRows.length);
+        setTotal(rows.length);
         setUploaded(0); setInserted(0); setSkipped(0);
         setAborted(false); setSpeed(0); setMsgIdx(0);
         abortRef.current = false; uploadedRef.current = 0;
@@ -172,10 +179,10 @@ const LeadImport = ({ isOpen, onClose, onDone, customFields = [] }) => {
 
         let ins = 0, skp = 0;
 
-        for (let i = 0; i < validRows.length; i += BATCH_SIZE) {
+        for (let i = 0; i < rows.length; i += BATCH_SIZE) {
             if (abortRef.current) { setAborted(true); break; }
 
-            const batch = validRows.slice(i, i + BATCH_SIZE);
+            const batch = rows.slice(i, i + BATCH_SIZE);
             let success = false;
             let retries = 3;
 
@@ -194,6 +201,8 @@ const LeadImport = ({ isOpen, onClose, onDone, customFields = [] }) => {
 
             if (success) {
                 uploadedRef.current += batch.length;
+            } else {
+                toast.warn(`Batch at row ${i + 1} failed after 3 retries — skipping`);
             }
 
             const elapsed = (Date.now() - startRef.current) / 1000 || 1;
@@ -203,10 +212,11 @@ const LeadImport = ({ isOpen, onClose, onDone, customFields = [] }) => {
             setSkipped(skp);
         }
 
+        // only mark aborted=false if we actually finished cleanly
         if (!abortRef.current) setAborted(false);
         setStage("done");
         if (ins > 0) { toast.success(`${ins} leads imported`); onDone?.(); }
-        else toast.info("Import complete — no new leads inserted");
+        else if (!abortRef.current) toast.info("Import complete — no new leads inserted");
     };
 
     const handleAbort = () => { abortRef.current = true; };
@@ -215,16 +225,12 @@ const LeadImport = ({ isOpen, onClose, onDone, customFields = [] }) => {
         const baseCols = ["contactNumber", "orgName", "address", "contactPerson", "email", "status", "communication"];
         const customCols = customFields.map(f => f.key);
         const allCols = [...baseCols, ...customCols];
-        
+        const emptyCustCols = customCols.map(() => "");
         const header = allCols.join(",");
         const sampleRows = [
-            "3238438400,Acme Corp,123 Main St Los Angeles,John Doe,john@acme.com,New Lead,Interested in premium units",
-            "3238438402,Beta LLC,456 Oak Ave New York,Jane Smith,jane@beta.com,Contacted,Called and left voicemail",
-        ].map(row => {
-            const extraCommas = ",".repeat(customCols.length);
-            return row + extraCommas;
-        });
-        
+            ["3238438400", "Acme Corp", "123 Main St Los Angeles", "John Doe", "john@acme.com", "New Lead", "Interested in premium units", ...emptyCustCols],
+            ["3238438402", "Beta LLC",  "456 Oak Ave New York",    "Jane Smith", "jane@beta.com", "Contacted", "Called and left voicemail", ...emptyCustCols],
+        ].map(cols => cols.map(v => v.includes(",") ? `"${v}"` : v).join(","));
         return [header, ...sampleRows].join("\n");
     };
 
@@ -233,7 +239,8 @@ const LeadImport = ({ isOpen, onClose, onDone, customFields = [] }) => {
     const downloadErrorLog = () => {
         const ts    = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
         const lines = ["#,Error", ...rowErrors.map((e, i) => `${i + 1},"${e.replace(/"/g, '""')}"`)]
-        downloadBlob(lines.join("\n"), `import-errors-${ts}.csv`);
+            .join("\n");
+        downloadBlob(lines, `import-errors-${ts}.csv`);
     };
 
     const downloadFixedTemplate = () => {

@@ -58,9 +58,7 @@ export default function GenerateProposal({ lead, companyId, onOpenTemplateEditor
                       : f.key === "contactNumber" ? lead.contactNumber
                       : f.key === "address"       ? lead.address
                       : f.key === "status"        ? lead.status
-                      : (lead.customFields instanceof Map
-                            ? lead.customFields.get(f.key)
-                            : lead.customFields?.[f.key]) ?? "";
+                      : (lead.customFields?.[f.key]) ?? "";
             auto[f.key] = val || "";
         });
         setFieldValues(auto);
